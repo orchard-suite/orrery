@@ -16,18 +16,17 @@ db:
 	@[ -n "$(CI)" ] || until docker exec orrery-pg pg_isready -q -U orrery; do sleep 1; done
 
 # The API must not break a caller since its last release: Trellis judges
-# openapi.json against the same file at the latest tag. The image is a
-# release from before Trellis took its name, so its program is conform. It
-# runs in a container with git, the checkout and its git directory mounted
-# at their own paths so a worktree works too.
-CONFORM := ghcr.io/dsswift/conform:2.3.0
+# openapi.json against the same file at the latest tag. It runs in a
+# container with git, the checkout and its git directory mounted at their
+# own paths so a worktree works too.
+TRELLIS := ghcr.io/orchard-suite/trellis:6.0.0
 GIT_COMMON := $(shell cd "$$(git rev-parse --git-common-dir)" && pwd)
 api:
-	@printf 'FROM $(CONFORM) AS conform\nFROM alpine/git:2.49.1\nCOPY --from=conform /app/conform /usr/local/bin/conform\nENTRYPOINT ["conform"]\n' \
-		| docker build -q --platform linux/amd64 -t orrery-conform - >/dev/null
+	@printf 'FROM $(TRELLIS) AS trellis\nFROM alpine/git:2.49.1\nCOPY --from=trellis /app/trellis /usr/local/bin/trellis\nENTRYPOINT ["trellis"]\n' \
+		| docker build -q --platform linux/amd64 -t orrery-trellis - >/dev/null
 	docker run --rm --platform linux/amd64 -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
 		-v "$(CURDIR):$(CURDIR)" -v "$(GIT_COMMON):$(GIT_COMMON)" -w "$(CURDIR)" \
-		orrery-conform check -dir . -packs interfaces -match 'v*' -fail-on high
+		orrery-trellis check -dir . -packs interfaces -match 'v*' -fail-on high
 
 go: ## build the Go binaries into bin/
 	go build -o bin/orrery ./cmd/orrery
