@@ -202,6 +202,13 @@ All notable changes to this project will be documented in this file. See [standa
 * hide a column on a grid with no saved layout ([bf0b005](https://github.com/orchard-suite/orrery/commit/bf0b005b3df3da0a23aeab19002eefe03cf68a9c))
 * keep blueprint fields in the order written ([4606692](https://github.com/orchard-suite/orrery/commit/460669295d0c49554ce15b4d3a42a6f1b8c648f0))
 
+## [2.0.3](https://github.com/orchard-suite/orrery/compare/v2.0.2...v2.0.3) (2026-11-23)
+
+### Bug Fixes
+
+* **orrery:** name muster for redgreen ([63beb07](https://github.com/orchard-suite/orrery/commit/63beb071600d768f19815759576fd6b47493c740))
+* **orrery:** release when a skill changes ([33a6bce](https://github.com/orchard-suite/orrery/commit/33a6bcec652dcf5de0fdf4c85f28859f27211742))
+
 ## [2.0.2](https://github.com/orchard-suite/orrery/compare/v2.0.1...v2.0.2) (2026-11-23)
 
 ### Bug Fixes
