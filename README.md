@@ -1,7 +1,17 @@
 # orrery
 
-A self-hosted catalog for everything you own and run: push it in,
-see how it connects, know if it's healthy.
+A self-hosted control plane and console for everything you own and run:
+push it in, see how it connects, know if it's healthy, and act on it.
+
+Orrery is an estate's control plane: the one service that holds the state
+of its things and carries out changes to them. It holds the model, the
+inventory, the actions, the approvals, the schedules, the reports, and the
+scores. It is also the console: where the people who run a platform see
+everything they own and act on it, as lists and actions. Other tools feed
+it and act through it, and keep their own pages. An app built for a
+business keeps its own portal and its own rules, and uses Orrery as an
+API, an inventory, an action runner, and an approval system. No business
+logic lives in Orrery.
 
 Every existing tool shows its own slice: the Azure portal, Grafana, GitHub,
 Proxmox, UniFi. Orrery joins the slices into one graph with live status on
