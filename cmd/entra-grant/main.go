@@ -47,9 +47,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/orchard-suite/orrery/cmd/internal/graph"
-	"github.com/orchard-suite/orrery/cmd/internal/workload"
-	"github.com/orchard-suite/orrery/sdk"
+	"github.com/orchard-suite/orrery/v2/cmd/internal/graph"
+	"github.com/orchard-suite/orrery/v2/cmd/internal/workload"
+	"github.com/orchard-suite/orrery/v2/sdk"
 )
 
 var version = "dev"

@@ -40,7 +40,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/orchard-suite/orrery/cmd/internal/workload"
+	"github.com/orchard-suite/orrery/v2/cmd/internal/workload"
 )
 
 var version = "dev"

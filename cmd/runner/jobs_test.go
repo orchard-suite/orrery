@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/orchard-suite/orrery/sdk"
+	"github.com/orchard-suite/orrery/v2/sdk"
 )
 
 func TestRunJobStreamsAndFinishes(t *testing.T) {

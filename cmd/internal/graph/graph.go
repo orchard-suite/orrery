@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/orchard-suite/orrery/cmd/internal/workload"
+	"github.com/orchard-suite/orrery/v2/cmd/internal/workload"
 )
 
 // Root is Microsoft Graph's v1.0 endpoint.

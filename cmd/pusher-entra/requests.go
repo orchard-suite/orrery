@@ -4,7 +4,7 @@ import (
 	"cmp"
 	"strings"
 
-	"github.com/orchard-suite/orrery/sdk"
+	"github.com/orchard-suite/orrery/v2/sdk"
 )
 
 // The pages in Entra where its own requests are decided.

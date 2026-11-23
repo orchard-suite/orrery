@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/orchard-suite/orrery/sdk"
+	"github.com/orchard-suite/orrery/v2/sdk"
 )
 
 // fakeHub is the hub as a starter sees it: the runs it holds, and what it was told.

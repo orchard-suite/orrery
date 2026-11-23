@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/orchard-suite/orrery/sdk"
+	"github.com/orchard-suite/orrery/v2/sdk"
 )
 
 // job is a queued action run the hub rendered for this runner.

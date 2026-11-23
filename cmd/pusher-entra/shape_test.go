@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/orchard-suite/orrery/sdk"
+	"github.com/orchard-suite/orrery/v2/sdk"
 )
 
 const tenant = "00000000-0000-0000-0000-00000000aaaa"

@@ -47,9 +47,9 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/orchard-suite/orrery/cmd/internal/containerapps"
-	"github.com/orchard-suite/orrery/cmd/internal/workload"
-	"github.com/orchard-suite/orrery/sdk"
+	"github.com/orchard-suite/orrery/v2/cmd/internal/containerapps"
+	"github.com/orchard-suite/orrery/v2/cmd/internal/workload"
+	"github.com/orchard-suite/orrery/v2/sdk"
 )
 
 var version = "dev"

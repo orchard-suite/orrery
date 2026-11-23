@@ -28,7 +28,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/orchard-suite/orrery/sdk"
+	"github.com/orchard-suite/orrery/v2/sdk"
 )
 
 var version = "dev"

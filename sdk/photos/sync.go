@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/orchard-suite/orrery/sdk"
+	"github.com/orchard-suite/orrery/v2/sdk"
 )
 
 // workers is how many photos are read from the provider at once.

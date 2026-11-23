@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/orchard-suite/orrery/cmd/internal/containerapps"
+	"github.com/orchard-suite/orrery/v2/cmd/internal/containerapps"
 )
 
 // ContainerApps starts each run as one execution of an Azure Container Apps

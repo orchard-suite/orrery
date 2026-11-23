@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/orchard-suite/orrery/cmd/internal/graph"
-	"github.com/orchard-suite/orrery/sdk/photos"
+	"github.com/orchard-suite/orrery/v2/cmd/internal/graph"
+	"github.com/orchard-suite/orrery/v2/sdk/photos"
 )
 
 // PhotoPermission is what the pusher's identity needs to read photos.

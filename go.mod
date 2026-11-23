@@ -1,4 +1,4 @@
-module github.com/orchard-suite/orrery
+module github.com/orchard-suite/orrery/v2
 
 go 1.27.4
 
