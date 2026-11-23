@@ -7,9 +7,12 @@ name: Release
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
+    # Docs alone do not release, but a skill's text ships in the plugin.
+    paths:
+      - '**'
+      - '!**/*.md'
+      - '!docs/**'
+      - 'skills/**'
   workflow_dispatch:
 
 permissions:
