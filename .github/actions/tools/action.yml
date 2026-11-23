@@ -1,0 +1,33 @@
+name: Tools
+description: >
+  Puts cosign, syft, and oras on the PATH. A tool the runner already
+  carries is used as it is; any other is copied out of its own image, so a
+  job never downloads them from GitHub's release files.
+inputs:
+  need:
+    description: The tools the job uses, space separated
+    default: cosign syft oras
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        NEED: ${{ inputs.need }}
+      run: |
+        set -eu
+        dir="$RUNNER_TEMP/tools"
+        mkdir -p "$dir"
+        for tool in $NEED; do
+          if command -v "$tool" >/dev/null; then echo "$tool: $(command -v "$tool")"; continue; fi
+          case "$tool" in
+            cosign) image=ghcr.io/sigstore/cosign/cosign:v2.5.2; path=/ko-app/cosign ;;
+            syft) image=anchore/syft:v1.42.3; path=/syft ;;
+            oras) image=ghcr.io/oras-project/oras:v1.3.0; path=/bin/oras ;;
+            *) echo "no image for $tool" >&2; exit 1 ;;
+          esac
+          id=$(docker create --platform linux/amd64 "$image")
+          docker cp "$id:$path" "$dir/$tool"
+          docker rm "$id" >/dev/null
+          echo "$tool: copied from $image"
+        done
+        echo "$dir" >> "$GITHUB_PATH"

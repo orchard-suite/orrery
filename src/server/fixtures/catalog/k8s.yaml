@@ -1,0 +1,214 @@
+# What the k8s pusher writes: the cluster, what ArgoCD deploys into it, and
+# every deployment ArgoCD recorded. One pusher per cluster; keys are prefixed
+# with the cluster name so several clusters share one estate.
+blueprints:
+  - id: k8s_cluster
+    title: Kubernetes cluster
+    group: Kubernetes
+    description: A Kubernetes cluster as seen by the in-cluster pusher.
+    icon: kubernetes
+    fields:
+      version: { type: string, title: Server version, overridable: false }
+      api_url: { type: url, title: API server, overridable: false }
+      nodes: { type: number, aggregation: { relation: '<-k8s_node:cluster', fn: count } }
+      namespaces: { type: number, aggregation: { relation: '<-k8s_namespace:cluster', fn: count } }
+      notes: { type: markdown }
+
+  - id: k8s_node
+    title: Kubernetes node
+    group: Kubernetes
+    description: A node in a cluster. Nests inside its cluster.
+    icon: server
+    status: { field: health }
+    fields:
+      roles: { type: array, overridable: false }
+      version: { type: string, title: Kubelet version, overridable: false }
+      os: { type: string, overridable: false }
+      arch: { type: string, overridable: false }
+      cpu: { type: number, title: CPU cores, overridable: false }
+      memory_gb: { type: number, title: Memory (GB), overridable: false }
+      internal_ip: { type: string, overridable: false }
+      ready: { type: boolean, overridable: false }
+      health: { type: enum, values: [red, amber, green, grey], overridable: false }
+      health_reason: { type: string, overridable: false }
+      notes: { type: markdown }
+    relations:
+      cluster: { target: k8s_cluster, many: false, required: true, display: contain, title: Cluster, inverseTitle: Nodes }
+
+  - id: k8s_namespace
+    title: Kubernetes namespace
+    group: Kubernetes
+    description: A namespace. Links to the system with the same name as the namespace.
+    icon: namespace
+    fields:
+      name: { type: string, description: The namespace name without the cluster prefix., overridable: false }
+      labels: { type: object, overridable: false }
+      phase: { type: string, overridable: false }
+      notes: { type: markdown }
+    relations:
+      cluster: { target: k8s_cluster, many: false, required: true, display: contain, title: Cluster, inverseTitle: Namespaces }
+      system: { target: system, many: false, title: System, inverseTitle: Namespaces }
+
+  - id: k8s_workload
+    title: Kubernetes workload
+    group: Kubernetes
+    description: >
+      A Deployment, StatefulSet, DaemonSet, or CronJob. Health is green when every desired replica is
+      ready, amber when some are, red when none are, grey when the pusher could not tell.
+    icon: layers
+    status: { field: health }
+    lifecycle: { grace: { runs: 2, duration: 10m } }
+    fields:
+      name: { type: string, description: The workload name without cluster and namespace., overridable: false }
+      kind: { type: enum, values: [Deployment, StatefulSet, DaemonSet, CronJob], overridable: false }
+      images: { type: array, overridable: false }
+      replicas: { type: number, title: Desired, overridable: false }
+      ready: { type: number, overridable: false }
+      health: { type: enum, values: [red, amber, green, grey], overridable: false }
+      health_reason: { type: string, overridable: false }
+      schedule: { type: string, description: Cron schedule, for CronJobs., overridable: false }
+      suspended: { type: boolean, overridable: false }
+      last_schedule_at: { type: datetime, overridable: false }
+      labels: { type: object, overridable: false }
+      created_at: { type: datetime, overridable: false }
+      notes: { type: markdown, description: Why this runs and what depends on it. }
+    relations:
+      namespace: { target: k8s_namespace, many: false, required: true, display: contain, title: Namespace, inverseTitle: Workloads }
+      system: { target: system, many: false, title: System, inverseTitle: Workloads }
+      workload: { target: workload, many: false, title: Hosts, inverseTitle: Cluster workloads }
+      node: { target: k8s_node, many: true, title: Runs on, inverseTitle: Workloads }
+
+  - id: k8s_pod
+    title: Kubernetes pod
+    group: Kubernetes
+    description: A pod. High churn, so expired quickly. Linked to its workload with a line, not nested, so the tree stays two levels deep.
+    icon: container
+    status: { field: health }
+    lifecycle: { grace: { runs: 1, duration: 10m } }
+    fields:
+      phase: { type: string, overridable: false }
+      ready: { type: boolean, overridable: false }
+      restarts: { type: number, overridable: false }
+      images: { type: array, overridable: false }
+      health: { type: enum, values: [red, amber, green, grey], overridable: false }
+      health_reason: { type: string, overridable: false }
+      started_at: { type: datetime, overridable: false }
+    relations:
+      workload: { target: k8s_workload, many: false, title: Workload, inverseTitle: Pods }
+      node: { target: k8s_node, many: false, title: Node, inverseTitle: Pods }
+      namespace: { target: k8s_namespace, many: false, title: Namespace, inverseTitle: Pods }
+
+  - id: k8s_service
+    title: Kubernetes service
+    group: Kubernetes
+    description: A Service and the workloads its selector matches.
+    icon: network
+    fields:
+      type: { type: string, overridable: false }
+      cluster_ip: { type: string, overridable: false }
+      external_ip: { type: string, overridable: false }
+      ports: { type: array, overridable: false }
+      selector: { type: object, overridable: false }
+    relations:
+      namespace: { target: k8s_namespace, many: false, required: true, display: contain, title: Namespace, inverseTitle: Services }
+      workloads: { target: k8s_workload, many: true, title: Routes to, inverseTitle: Services }
+
+  - id: k8s_ingress
+    title: Kubernetes ingress
+    group: Kubernetes
+    description: An Ingress with its hosts and the services it routes to. Its health is the first host answering over https.
+    icon: globe
+    fields:
+      class: { type: string, overridable: false }
+      hosts: { type: array, overridable: false }
+      tls: { type: boolean, overridable: false }
+      health: { type: healthcheck, title: Health check, description: "Set by the pusher: the first host over https, probed from the hub and the LAN runner. Anything below 500 counts as answering." }
+    relations:
+      namespace: { target: k8s_namespace, many: false, required: true, display: contain, title: Namespace, inverseTitle: Ingresses }
+      services: { target: k8s_service, many: true, title: Routes to, inverseTitle: Ingresses }
+
+  - id: argocd_app
+    title: ArgoCD application
+    group: Kubernetes
+    description: An ArgoCD Application. Says whether what runs matches what git declares, which repository it deploys from, and how often and how reliably it deploys.
+    icon: argocd
+    status: { field: health }
+    fields:
+      project: { type: string, chip: true, overridable: false }
+      repo_url: { type: url, title: Source repository, overridable: false }
+      path: { type: string, overridable: false }
+      target_revision: { type: string, overridable: false }
+      destination_namespace: { type: string, overridable: false }
+      sync_status: { type: string, chip: true, overridable: false }
+      health_status: { type: string, chip: true, overridable: false }
+      revision: { type: string, overridable: false }
+      last_sync_at: { type: datetime, overridable: false }
+      health: { type: enum, values: [red, amber, green, grey], overridable: false }
+      health_reason: { type: string, overridable: false }
+      last_deployed_at: { type: datetime, title: Last deployed, aggregation: { relation: '<-sw_deployment:app', fn: max, field: deployed_at, where: { field: status, op: eq, value: succeeded } } }
+      deployments_30d: { type: number, title: Deployments (30d), aggregation: { relation: '<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: succeeded }, window: { field: deployed_at, last: 30d } } }
+      failed_deployments_30d: { type: number, title: Failed deployments (30d), aggregation: { relation: '<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: failed }, window: { field: deployed_at, last: 30d } } }
+      deployments_per_week: { type: number, title: Deployments per week, description: Successful deployments per week over the last 90 days., aggregation: { relation: '<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: succeeded }, window: { field: deployed_at, last: 90d }, per: week } }
+      change_failure_rate: { type: number, title: Change failure rate (%), description: The share of the last 30 days' deployments that failed., calculation: "deployments_30d + failed_deployments_30d > 0 ? round(failed_deployments_30d / (deployments_30d + failed_deployments_30d) * 100) : null" }
+    relations:
+      cluster: { target: k8s_cluster, many: false, title: Cluster, inverseTitle: ArgoCD apps }
+      namespace: { target: k8s_namespace, many: false, title: Deploys into, inverseTitle: ArgoCD apps }
+      repository: { target: repository, many: false, title: Deploys from, inverseTitle: Deployed by }
+      workload: { target: workload, many: false, title: Deploys, inverseTitle: Deployed by }
+
+  - id: sw_deployment
+    title: Deployment
+    group: Software
+    description: >
+      One time a version was rolled out: an ArgoCD sync that finished, or a last sync that failed.
+      Deployments only accumulate, so they are pushed apart from the cluster snapshot and leave by
+      age. Count them over a window to see how often and how reliably something deploys.
+    icon: rocket
+    lifecycle: { expire: { after: 180d, field: deployed_at } }
+    fields:
+      status: { type: enum, values: [succeeded, failed], overridable: false }
+      revision: { type: string, description: The git revision that was synced., overridable: false }
+      deployed_at: { type: datetime, description: When the sync finished., overridable: false }
+      started_at: { type: datetime, overridable: false }
+      duration_seconds: { type: number, title: Duration (s), overridable: false }
+      initiated_by: { type: string, description: The user who started it. Empty for an automated sync., overridable: false }
+      automated: { type: boolean, overridable: false }
+      message: { type: string, description: "What ArgoCD reported, for a failed sync.", overridable: false }
+    relations:
+      app: { target: argocd_app, many: false, required: true, title: Application, inverseTitle: Deployments }
+
+# Joins the hub computes. Pushers never need to know how systems, workloads, or repositories are named.
+relationRules:
+  - id: k8s_namespace.system
+    blueprint: k8s_namespace
+    relation: system
+    match: { target: system, where: "target.key == source.name" }
+  - id: k8s_workload.system
+    blueprint: k8s_workload
+    relation: system
+    match: { target: system, where: "target.key == source.labels['app.kubernetes.io/part-of']" }
+  - id: k8s_workload.workload
+    blueprint: k8s_workload
+    relation: workload
+    match: { target: workload, where: "target.key == source.name" }
+  - id: argocd_app.workload
+    blueprint: argocd_app
+    relation: workload
+    match: { target: workload, where: "target.key == source.title" }
+  - id: argocd_app.repository
+    blueprint: argocd_app
+    relation: repository
+    match: { target: repository, where: "target.url == source.repo_url" }
+
+# Alertmanager alerts carrying a namespace label attach to the namespace; ones with a
+# deployment, statefulset, daemonset, or cronjob label attach to the workload.
+alertRules:
+  - id: k8s_namespace.alerts
+    blueprint: k8s_namespace
+    where: "target.name == alert.labels['namespace']"
+  - id: k8s_workload.alerts
+    blueprint: k8s_workload
+    where: "target.name == alert.labels['deployment']"
+  - id: k8s_pod.alerts
+    blueprint: k8s_pod
+    where: "target.title == alert.labels['pod']"

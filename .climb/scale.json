@@ -1,0 +1,15 @@
+{
+  "title": "Estate at scale",
+  "metric": "Time to push, link, and read an estate of 115,545 entities through the API",
+  "unit": "ms",
+  "better": "lower",
+  "score": "BENCH_SCALE=3 LOG_LEVEL=error node bench/scale.ts | tail -1",
+  "heldout": "BENCH_SCALE=1.5 LOG_LEVEL=error node bench/scale.ts | tail -1",
+  "guard": ["npm run check --silent"],
+  "editable": ["src/**"],
+  "frozen": ["bench/**", "src/**/*.test.ts", "src/server/fixtures/**", "package-lock.json"],
+  "setup": "npm ci",
+  "runs": 3,
+  "noise": 0,
+  "timeout": 3600
+}

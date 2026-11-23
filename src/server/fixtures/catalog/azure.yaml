@@ -1,0 +1,65 @@
+# What the Azure pusher writes: every resource in a subscription, generically.
+# Keys are the lower-cased resource path under the subscription id.
+blueprints:
+  - id: azure_subscription
+    title: Azure subscription
+    group: Cloud
+    description: An Azure subscription the pusher can read.
+    icon: azure
+    fields:
+      subscription_id: { type: string, overridable: false }
+      state: { type: string, overridable: false }
+      tenant_id: { type: string, overridable: false }
+      portal: { type: url, title: Azure portal }
+      resource_groups: { type: number, aggregation: { relation: '<-azure_resource_group:subscription', fn: count } }
+      notes: { type: markdown }
+
+  - id: azure_resource_group
+    title: Azure resource group
+    group: Cloud
+    description: A resource group. Nests inside its subscription.
+    icon: folder
+    fields:
+      location: { type: string, overridable: false }
+      tags: { type: object, overridable: false }
+      portal: { type: url, title: Azure portal }
+      resources: { type: number, aggregation: { relation: '<-azure_resource:resource_group', fn: count } }
+      notes: { type: markdown }
+    relations:
+      subscription: { target: azure_subscription, many: false, required: true, display: contain, title: Subscription, inverseTitle: Resource groups }
+      system: { target: system, many: false, title: System, inverseTitle: Resource groups }
+
+  - id: azure_resource
+    title: Azure resource
+    group: Cloud
+    description: >
+      Any Azure resource: a web app, a database, a storage account, a key vault. The type field
+      says which. Specific pushers may enrich these with cost, health, and configuration.
+    icon: cube
+    fields:
+      type: { type: string, title: Resource type, overridable: false }
+      kind: { type: string, overridable: false }
+      location: { type: string, overridable: false }
+      sku: { type: string, overridable: false }
+      tags: { type: object, overridable: false }
+      resource_id: { type: string, overridable: false }
+      portal: { type: url, title: Azure portal }
+      notes: { type: markdown }
+    relations:
+      resource_group: { target: azure_resource_group, many: false, required: true, display: contain, title: Resource group, inverseTitle: Resources }
+      system: { target: system, many: false, title: System, inverseTitle: Azure resources }
+      workload: { target: workload, many: false, title: Hosts, inverseTitle: Cloud resources }
+
+relationRules:
+  - id: azure_resource_group.system
+    blueprint: azure_resource_group
+    relation: system
+    match: { target: system, where: "target.key == source.tags['system']" }
+  - id: azure_resource.system
+    blueprint: azure_resource
+    relation: system
+    match: { target: system, where: "target.key == source.tags['system']" }
+  - id: azure_resource.workload
+    blueprint: azure_resource
+    relation: workload
+    match: { target: workload, where: "target.key == source.tags['workload']" }

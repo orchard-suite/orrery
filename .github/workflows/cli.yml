@@ -1,0 +1,30 @@
+name: CLI
+
+# Publishes the command line of one tag for people's computers, as one signed
+# OCI artifact in the same public package as the hub:
+#   ghcr.io/orchard-suite/orrery:cli-<version>
+# The release publishes it through the cli action in .github/actions; run
+# this by hand to publish it again for a tag that carries that action.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: ./.github/actions/cli
+        with:
+          tag: ${{ inputs.tag }}
+          token: ${{ secrets.GITHUB_TOKEN }}

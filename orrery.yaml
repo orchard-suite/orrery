@@ -1,0 +1,33 @@
+# What this repository builds, for the Orrery of an estate that reads it:
+# the forge reader reads this file with the repository and writes the
+# service, its logo, the APIs it provides, and the APIs it calls. An estate
+# that does not read this repository never lists it. An API key is the
+# providing service's key and the API's id.
+# It names no domains: an estate places Orrery in its own scheme itself.
+service: github/orchard-suite/orrery
+icon:
+  name: orrery
+  file: logo.svg
+provides:
+- id: catalog
+  title: Orrery catalog API
+  kind: rest
+  description: 'Entities, blueprints, and writes from sources: what exists, who owns it, and how it is doing.'
+  spec: openapi.json
+- id: actions
+  title: Orrery actions API
+  kind: rest
+  description: Self-service action declarations, runs, and run reports.
+  spec: openapi.json
+- id: alerts
+  title: Orrery alert receiver
+  kind: event
+  description: Firing alerts from Alertmanager, kept on what they fire on.
+  spec: openapi.json
+- id: mcp
+  title: Orrery MCP server
+  kind: mcp
+  description: The catalog and actions as tools for agents.
+consumes:
+- github/actions
+- github/orchard-suite/annals/cmd/annalsd/events

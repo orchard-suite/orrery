@@ -1,0 +1,212 @@
+# The software side of the estate. A repository is what a forge holds. A
+# service is what people run and answer for, built from one repository. A
+# workload is one service running in one environment, whatever hosts it.
+blueprints:
+  - id: repository
+    title: Repository
+    group: Catalog
+    description: >
+      A Git repository on a forge, pushed by the repo health board: language, branch protection,
+      last push, pipeline health, alert counts. Nothing here is authored. What people decide about
+      the software lives on the service built from it. A team owns it.
+    icon: repository
+    status: { field: health }
+    fields:
+      description: { type: string, description: The repository description., overridable: false }
+      url: { type: url, title: Repository, overridable: false }
+      provider: { type: enum, values: [github, gitlab, azure_devops], overridable: false }
+      organization: { type: string, chip: true, overridable: false, description: The account or group the repository lives under. }
+      name: { type: string, overridable: false, description: The repository name without its organization. }
+      language: { type: string, chip: true, overridable: false }
+      visibility: { type: enum, values: [public, private, internal], overridable: false }
+      archived: { type: boolean, overridable: false }
+      fork: { type: boolean, overridable: false }
+      topics: { type: array, overridable: false }
+      default_branch: { type: string, overridable: false }
+      branch_protected: { type: boolean, title: Is branch protected, overridable: false }
+      requires_code_review: { type: boolean, title: Requires code review, overridable: false }
+      required_approvals: { type: number, overridable: false }
+      requires_code_owner_review: { type: boolean, title: Require code owner review, overridable: false }
+      has_codeowners: { type: boolean, title: Has CODEOWNERS, overridable: false }
+      has_readme: { type: boolean, title: Has README, overridable: false }
+      has_dockerfile: { type: boolean, title: Has Dockerfile, overridable: false }
+      has_ci: { type: boolean, title: Has CI, overridable: false }
+      last_push: { type: datetime, overridable: false }
+      freshness_days: { type: number, title: Freshness (days), calculation: days_since(last_push) }
+      last_committer: { type: string, overridable: false }
+      last_commit_at: { type: datetime, overridable: false }
+      open_prs: { type: number, title: Open PRs, overridable: false }
+      stale_prs: { type: number, title: Stale PRs (7d+), overridable: false }
+      open_issues: { type: number, overridable: false }
+      stars: { type: number, overridable: false }
+      pipelines: { type: number, overridable: false }
+      pipelines_failing: { type: number, overridable: false }
+      workflow_failure_rate: { type: number, title: Workflow failure rate (%), overridable: false }
+      last_release: { type: string, overridable: false }
+      last_release_at: { type: datetime, overridable: false }
+      dependabot_critical: { type: number, title: Dependabot critical, overridable: false }
+      dependabot_high: { type: number, title: Dependabot high, overridable: false }
+      code_scanning_critical: { type: number, title: Code scanning critical, overridable: false }
+      code_scanning_high: { type: number, title: Code scanning high, overridable: false }
+      open_alerts: { type: number, title: Total open alerts, calculation: "coalesce(dependabot_critical, 0) + coalesce(dependabot_high, 0) + coalesce(code_scanning_critical, 0) + coalesce(code_scanning_high, 0)" }
+      coverage_pct: { type: number, title: Coverage (%), description: Code coverage. Pushed by CI with the orrery CLI, or typed in. }
+      health: { type: enum, values: [red, amber, green, grey], overridable: false }
+      health_reason: { type: string, overridable: false }
+      board: { type: url, title: Repo health board, overridable: false }
+      services: { type: number, title: Services, description: How many services are built from this repository., aggregation: { relation: '<-service:repository', fn: count } }
+      notes: { type: markdown }
+
+  - id: service
+    title: Service
+    group: Catalog
+    description: >
+      Software people run and answer for: an app, an API, a job. It is built from one repository
+      and runs as workloads, one per environment. Tier, type, lifecycle, links, and notes are
+      authored here. Facts about the code are read from the repository, and facts about what is
+      running from the workloads. A team owns it. A service whose key is a repository's name links
+      to it by itself.
+    icon: service
+    status: { relations: [repository, '<-workload:service'] }
+    fields:
+      description: { type: string, description: What it does and who it is for. }
+      tier: { type: enum, values: [mission_critical, customer_facing, internal, other], description: How much it matters when this is down. }
+      type: { type: enum, values: [backend, frontend, library, infrastructure, tool, docs, other] }
+      lifecycle: { type: enum, values: [production, staging, development, experimental, deprecated] }
+      logs: { type: url, title: Logs, description: Built from the service's key., calculation: "'https://logs.example.org/explore?service=' + key" }
+      language: { type: string, chip: true, mirror: repository.language }
+      repo_url: { type: url, title: Repository URL, mirror: repository.url }
+      build: { type: string, chip: true, title: Build, description: The repository's pipeline health., mirror: repository.health }
+      last_push: { type: datetime, mirror: repository.last_push }
+      freshness_days: { type: number, title: Freshness (days), mirror: repository.freshness_days }
+      open_alerts: { type: number, title: Open security alerts, mirror: repository.open_alerts }
+      workloads: { type: number, description: How many environments it runs in., aggregation: { relation: '<-workload:service', fn: count } }
+      apis: { type: number, title: APIs, aggregation: { relation: '<-api:service', fn: count } }
+      last_deployed_at: { type: datetime, title: Last deployed, aggregation: { relation: '<-workload:service.<-argocd_app:workload', fn: max, field: last_deployed_at } }
+      deployments_30d: { type: number, title: Deployments (30d), aggregation: { relation: '<-workload:service.<-argocd_app:workload.<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: succeeded }, window: { field: deployed_at, last: 30d } } }
+      failed_deployments_30d: { type: number, title: Failed deployments (30d), aggregation: { relation: '<-workload:service.<-argocd_app:workload.<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: failed }, window: { field: deployed_at, last: 30d } } }
+      deployments_per_week: { type: number, title: Deployments per week, description: Successful deployments per week over the last 90 days., aggregation: { relation: '<-workload:service.<-argocd_app:workload.<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: succeeded }, window: { field: deployed_at, last: 90d }, per: week } }
+      change_failure_rate: { type: number, title: Change failure rate (%), description: The share of the last 30 days' deployments that failed., calculation: "deployments_30d + failed_deployments_30d > 0 ? round(failed_deployments_30d / (deployments_30d + failed_deployments_30d) * 100) : null" }
+      runbook: { type: url, title: Runbook }
+      dashboard: { type: url, title: Grafana dashboard }
+      wiki: { type: url, title: Wiki }
+      docs: { type: url, title: Documentation }
+      chat: { type: url, title: Chat channel }
+      notes: { type: markdown, description: Why this exists, what breaks if it goes, what to know at 3am. }
+    relations:
+      repository: { target: repository, many: false, title: Built from, inverseTitle: Services }
+      system: { target: system, many: false, title: System, inverseTitle: Services }
+      depends_on: { target: service, many: true, title: Depends on, inverseTitle: Consumed by }
+
+  - id: environment
+    title: Environment
+    group: Catalog
+    description: >
+      A place software runs as a whole: production, staging, a lab. Every workload says which one
+      it is in, so the same service can be compared across them. Its status is the worst of the
+      workloads in it.
+    icon: environment
+    status: { relations: ['<-workload:environment'] }
+    fields:
+      type: { type: enum, values: [production, staging, development, test, lab] }
+      description: { type: string }
+      workloads: { type: number, aggregation: { relation: '<-workload:environment', fn: count } }
+      notes: { type: markdown }
+
+  - id: workload
+    title: Workload
+    group: Catalog
+    description: >
+      One service running in one environment. Whatever actually hosts it points here: a Kubernetes
+      workload, an ArgoCD application, a cloud resource. So "where does this run and is it
+      healthy" has one answer however it is hosted. Its status is the worst of everything that
+      hosts it. A workload whose key is a service's key links to that service by itself, and
+      hosts named after the workload link to it the same way.
+    icon: app
+    status: { relations: ['<-k8s_workload:workload', '<-argocd_app:workload', '<-azure_resource:workload'] }
+    fields:
+      url: { type: url, title: URL, description: Where it is reached. }
+      health: { type: healthcheck, title: Health check }
+      tier: { type: string, chip: true, mirror: service.tier }
+      environment_type: { type: string, chip: true, title: Environment type, mirror: environment.type }
+      sync_status: { type: string, chip: true, title: Sync status, mirror: '<-argocd_app:workload.sync_status' }
+      deploy_health: { type: string, chip: true, title: Deploy health, mirror: '<-argocd_app:workload.health_status' }
+      last_deployed_at: { type: datetime, title: Last deployed, aggregation: { relation: '<-argocd_app:workload', fn: max, field: last_deployed_at } }
+      deployments_30d: { type: number, title: Deployments (30d), aggregation: { relation: '<-argocd_app:workload.<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: succeeded }, window: { field: deployed_at, last: 30d } } }
+      cluster_workloads: { type: number, title: Cluster workloads, aggregation: { relation: '<-k8s_workload:workload', fn: count } }
+      cloud_resources: { type: number, title: Cloud resources, aggregation: { relation: '<-azure_resource:workload', fn: count } }
+      notes: { type: markdown, description: What is particular about this service in this environment. }
+    relations:
+      service: { target: service, many: false, required: true, title: Runs, inverseTitle: Workloads }
+      environment: { target: environment, many: false, required: true, title: Environment, inverseTitle: Workloads }
+
+  - id: api
+    title: API
+    group: Catalog
+    description: >
+      An interface a service exposes: a REST API, a GraphQL endpoint, an event stream. It is built
+      from one service and served by that service's workloads.
+    icon: api
+    fields:
+      description: { type: string }
+      kind: { type: enum, values: [rest, graphql, grpc, event, mcp, web] }
+      lifecycle: { type: enum, values: [production, staging, development, experimental, deprecated] }
+      base_url: { type: url, title: Base URL }
+      spec: { type: url, title: Specification, description: OpenAPI, AsyncAPI, or schema link. }
+      health: { type: healthcheck, title: Health check }
+      tier: { type: string, chip: true, mirror: service.tier }
+      notes: { type: markdown }
+    relations:
+      service: { target: service, many: false, required: true, title: Built from, inverseTitle: Provides APIs }
+      workloads: { target: workload, many: true, title: Served by, inverseTitle: Serves APIs }
+      consumers: { target: service, many: true, title: Consumed by, inverseTitle: Consumes APIs }
+
+# Joins by name, so authoring a service or a workload is one line: its key.
+relationRules:
+  - id: service.repository
+    blueprint: service
+    relation: repository
+    match: { target: repository, where: "target.name == source.key" }
+  - id: workload.service
+    blueprint: workload
+    relation: service
+    match: { target: service, where: "target.key == source.key" }
+
+scorecards:
+  - id: repository_hygiene
+    blueprint: repository
+    title: Repository hygiene
+    description: What a repository needs before the things built from it can be trusted.
+    levels:
+      - name: Bronze
+        rules:
+          - { id: has_readme, title: Has a README, where: { field: has_readme, op: eq, value: true } }
+          - { id: has_ci, title: Has CI, where: { field: has_ci, op: eq, value: true } }
+          - { id: fresh_year, title: Pushed within a year, where: { field: last_push, op: within, value: 365d } }
+      - name: Silver
+        rules:
+          - { id: branch_protected, title: Branch protection set, where: { field: branch_protected, op: eq, value: true } }
+          - { id: no_critical_alerts, title: No critical alerts, where: { and: [{ not: { field: dependabot_critical, op: gt, value: 0 } }, { not: { field: code_scanning_critical, op: gt, value: 0 } }] } }
+          - { id: pipelines_green, title: Pipelines not red, where: { not: { field: health, op: eq, value: red } } }
+      - name: Gold
+        rules:
+          - { id: code_review, title: Requires code review, where: { field: requires_code_review, op: eq, value: true } }
+          - { id: fresh_quarter, title: Pushed within 90 days, where: { field: last_push, op: within, value: 90d } }
+
+  - id: service_maturity
+    blueprint: service
+    title: Service maturity
+    description: What a service needs before it can be run with confidence. Bronze is known and owned, Silver is running and classified, Gold is operable.
+    levels:
+      - name: Bronze
+        rules:
+          - { id: has_repository, title: Built from a repository, where: { relation: repository } }
+          - { id: has_description, title: Has a description, where: { field: description, op: exists } }
+      - name: Silver
+        rules:
+          - { id: runs_somewhere, title: Runs somewhere, description: At least one workload runs it., where: { relation: '<-workload:service' } }
+          - { id: tiered, title: Has a tier and lifecycle, where: { and: [{ field: tier, op: exists }, { field: lifecycle, op: exists }] } }
+      - name: Gold
+        rules:
+          - { id: has_runbook, title: Has a runbook, where: { field: runbook, op: exists } }
+          - { id: has_dashboard, title: Has a dashboard, where: { field: dashboard, op: exists } }
+          - { id: deployed_recently, title: Deployed within 30 days, where: { field: last_deployed_at, op: within, value: 30d } }

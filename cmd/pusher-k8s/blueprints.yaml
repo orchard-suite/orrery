@@ -1,0 +1,240 @@
+# The blueprints this pusher writes. It offers them to the hub when it starts:
+# the hub creates the ones that do not exist and leaves the rest as they are, so
+# they are yours to edit. Keys are prefixed with the cluster name so several
+# clusters share one estate.
+blueprints:
+  - id: k8s_cluster
+    title: Kubernetes cluster
+    group: Kubernetes
+    description: A Kubernetes cluster as seen by the in-cluster pusher.
+    icon: kubernetes
+    fields:
+      version: { type: string, title: Server version }
+      api_url: { type: url, title: API server }
+      nodes: { type: number, aggregation: { relation: '<-k8s_node:cluster', fn: count } }
+      namespaces: { type: number, aggregation: { relation: '<-k8s_namespace:cluster', fn: count } }
+      notes: { type: markdown }
+
+  - id: k8s_node
+    title: Kubernetes node
+    group: Kubernetes
+    description: A node in a cluster. Nests inside its cluster.
+    icon: server
+    status: { field: health }
+    fields:
+      roles: { type: array }
+      version: { type: string, title: Kubelet version }
+      os: { type: string }
+      arch: { type: string }
+      cpu: { type: number, title: CPU cores }
+      memory_gb: { type: number, title: Memory (GB) }
+      allocatable_cpu: { type: number, title: Allocatable CPU, description: What pods may ask for after the node keeps its own share. }
+      allocatable_memory_gb: { type: number, title: Allocatable memory (GB) }
+      zone: { type: string, description: "The node's topology.kubernetes.io/zone label: the failure domain it shares with other nodes." }
+      system_uuid: { type: string, title: System UUID, description: "The machine's SMBIOS UUID, lowercase: the key to the VM or server it runs on." }
+      internal_ip: { type: string }
+      ready: { type: boolean }
+      health: { type: enum, values: [red, amber, green, grey] }
+      health_reason: { type: string }
+      notes: { type: markdown }
+    relations:
+      cluster: { target: k8s_cluster, many: false, required: true, display: contain, title: Cluster, inverseTitle: Nodes }
+
+  - id: k8s_namespace
+    title: Kubernetes namespace
+    group: Kubernetes
+    description: A namespace. Nests inside its cluster.
+    icon: folder
+    fields:
+      name: { type: string, description: The namespace name without the cluster prefix. }
+      labels: { type: object }
+      phase: { type: string }
+      notes: { type: markdown }
+    relations:
+      cluster: { target: k8s_cluster, many: false, required: true, display: contain, title: Cluster, inverseTitle: Namespaces }
+
+  - id: k8s_workload
+    title: Kubernetes workload
+    group: Kubernetes
+    description: >
+      A Deployment, StatefulSet, DaemonSet, CronJob, or a Job no CronJob owns. For the first three,
+      health is green when every desired replica is ready, amber when some are, red when none are,
+      grey when the pusher could not tell. A job's pods are folded into its workload rather than
+      pushed as pods: a CronJob or a Job carries the run record of the Jobs the cluster still holds
+      (the last run, the last success and failure, the runs going now, and trends of run times and
+      results), and its health is red when its newest finished run failed, grey when suspended, and
+      green otherwise. "Runs on" names the nodes its pods run on now.
+    icon: layers
+    status: { field: health }
+    lifecycle: { grace: { runs: 2, duration: 10m } }
+    fields:
+      name: { type: string, description: The workload name without cluster and namespace. }
+      kind: { type: enum, values: [Deployment, StatefulSet, DaemonSet, CronJob, Job] }
+      images: { type: array }
+      replicas: { type: number, title: Desired }
+      ready: { type: number }
+      health: { type: enum, values: [red, amber, green, grey] }
+      health_reason: { type: string }
+      schedule: { type: string, description: Cron schedule, for CronJobs. }
+      suspended: { type: boolean }
+      last_schedule_at: { type: datetime, title: Last scheduled, description: When the CronJob last started a run. }
+      last_run_status: { type: enum, values: [running, succeeded, failed], title: Last run, chip: true, description: "For a CronJob or a Job: how its newest run stands." }
+      last_run_started_at: { type: datetime, title: Last run started }
+      last_run_finished_at: { type: datetime, title: Last run finished, description: Empty while the newest run is still going. }
+      last_run_seconds: { type: number, title: Last run (s), description: How long the newest run took, in seconds. Empty while it is still going. }
+      last_success_at: { type: datetime, title: Last succeeded, description: When a run last finished well. A CronJob remembers this past the Jobs the cluster keeps. }
+      last_failure_at: { type: datetime, title: Last failed, description: When the newest failed run the cluster still holds finished. Empty once the cluster lets that Job go. }
+      last_failure_reason: { type: string, title: Last failure, description: "Why that run failed: the Job's reason, such as BackoffLimitExceeded, and what the failed container said as it ended." }
+      running_count: { type: number, title: Running now, description: How many of its runs are going now. }
+      run_seconds: { type: trend, title: Run times, description: How long each finished run the cluster still holds took, in seconds, oldest first. Sent by the pusher. }
+      run_results: { type: trend, title: Run results, description: "Each finished run the cluster still holds, oldest first: 1 succeeded, 0 failed. Sent by the pusher." }
+      labels: { type: object }
+      created_at: { type: datetime }
+      notes: { type: markdown, description: Why this runs and what depends on it. }
+    relations:
+      namespace: { target: k8s_namespace, many: false, required: true, display: contain, title: Namespace, inverseTitle: Workloads }
+      node: { target: k8s_node, many: true, title: Runs on, inverseTitle: Workloads }
+
+  - id: k8s_pod
+    title: Kubernetes pod
+    group: Kubernetes
+    description: >
+      A pod of a Deployment, StatefulSet, DaemonSet, or none. A pod a Job owns is never one: its run is
+      folded into the job's workload, which says how the job's runs went. High churn, so expired quickly.
+      Linked to its workload with a line, not nested, so the tree stays two levels deep.
+    icon: circle
+    status: { field: health }
+    lifecycle: { grace: { runs: 1, duration: 10m }, keepDeleted: 1d }
+    fields:
+      phase: { type: string }
+      ready: { type: boolean }
+      restarts: { type: number }
+      images: { type: array }
+      health: { type: enum, values: [red, amber, green, grey] }
+      health_reason: { type: string }
+      started_at: { type: datetime }
+    relations:
+      workload: { target: k8s_workload, many: false, title: Workload, inverseTitle: Pods }
+      node: { target: k8s_node, many: false, title: Node, inverseTitle: Pods }
+      namespace: { target: k8s_namespace, many: false, title: Namespace, inverseTitle: Pods }
+
+  - id: k8s_service
+    title: Kubernetes service
+    group: Kubernetes
+    description: A Service and the workloads its selector matches.
+    icon: plug
+    fields:
+      type: { type: string }
+      cluster_ip: { type: string }
+      external_ip: { type: string }
+      ports: { type: array }
+      selector: { type: object }
+      hosts: { type: array, title: Hosts, description: "Every in-cluster DNS name the service answers to: <name>.<namespace>, <name>.<namespace>.svc, and <name>.<namespace>.svc.cluster.local, lowercase. A relation rule matches a connection's host against it to link the caller to this service." }
+    relations:
+      namespace: { target: k8s_namespace, many: false, required: true, display: contain, title: Namespace, inverseTitle: Services }
+      workloads: { target: k8s_workload, many: true, title: Routes to, inverseTitle: Services }
+
+  - id: k8s_ingress
+    title: Kubernetes ingress
+    group: Kubernetes
+    description: An Ingress with its hosts and the services it routes to. Its health is the first host answering over https.
+    icon: globe
+    fields:
+      class: { type: string }
+      hosts: { type: array }
+      tls: { type: boolean }
+      health: { type: healthcheck, title: Health check, description: "Set by the pusher: the first host over https, probed by the runners named in INGRESS_RUNNERS. Anything below 500 counts as answering." }
+    relations:
+      namespace: { target: k8s_namespace, many: false, required: true, display: contain, title: Namespace, inverseTitle: Ingresses }
+      services: { target: k8s_service, many: true, title: Routes to, inverseTitle: Ingresses }
+
+  - id: argocd_app
+    title: ArgoCD application
+    group: Kubernetes
+    description: An ArgoCD Application. Says whether what runs matches what git declares, which repository it deploys from, and how often and how reliably it deploys.
+    icon: argocd
+    status: { field: health }
+    fields:
+      project: { type: string, chip: true }
+      repo_url: { type: url, title: Source repository }
+      path: { type: string }
+      target_revision: { type: string }
+      destination_namespace: { type: string }
+      sync_status: { type: string, chip: true }
+      health_status: { type: string, chip: true }
+      revision: { type: string }
+      last_sync_at: { type: datetime }
+      health: { type: enum, values: [red, amber, green, grey] }
+      health_reason: { type: string }
+      last_deployed_at: { type: datetime, title: Last deployed, aggregation: { relation: '<-sw_deployment:app', fn: max, field: deployed_at, where: { field: status, op: eq, value: succeeded } } }
+      deployments_30d: { type: number, title: Deployments (30d), aggregation: { relation: '<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: succeeded }, window: { field: deployed_at, last: 30d } } }
+      failed_deployments_30d: { type: number, title: Failed deployments (30d), aggregation: { relation: '<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: failed }, window: { field: deployed_at, last: 30d } } }
+      deployments_per_week: { type: number, title: Deployments per week, description: Successful deployments per week over the last 90 days., aggregation: { relation: '<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: succeeded }, window: { field: deployed_at, last: 90d }, per: week } }
+      change_failure_rate: { type: number, title: Change failure rate (%), description: The share of the last 30 days' deployments that failed., calculation: "deployments_30d + failed_deployments_30d > 0 ? round(failed_deployments_30d / (deployments_30d + failed_deployments_30d) * 100) : null" }
+    relations:
+      cluster: { target: k8s_cluster, many: false, title: Cluster, inverseTitle: ArgoCD apps }
+      namespace: { target: k8s_namespace, many: false, title: Deploys into, inverseTitle: ArgoCD apps }
+
+  - id: k8s_network_policy
+    title: Kubernetes network policy
+    group: Kubernetes
+    description: >
+      A NetworkPolicy, or a Cilium policy where Cilium runs, and the workloads whose pods it selects.
+      Each rule is one short line: who may reach the selected pods, or whom they may reach.
+    icon: shield
+    lifecycle: { grace: { runs: 2, duration: 10m } }
+    fields:
+      kind: { type: enum, values: [NetworkPolicy, CiliumNetworkPolicy, CiliumClusterwideNetworkPolicy] }
+      policy_types: { type: array, title: Directions }
+      selector: { type: string, description: The pods it applies to. }
+      ingress: { type: array, description: One line per ingress rule. }
+      egress: { type: array, description: One line per egress rule. }
+      notes: { type: markdown }
+    relations:
+      cluster: { target: k8s_cluster, many: false, required: true, title: Cluster, inverseTitle: Network policies }
+      namespace: { target: k8s_namespace, many: false, display: contain, title: Namespace, inverseTitle: Network policies }
+      workloads: { target: k8s_workload, many: true, title: Applies to, inverseTitle: Network policies }
+
+  - id: k8s_volume
+    title: Kubernetes volume
+    group: Kubernetes
+    description: >
+      A PersistentVolumeClaim and the workloads that mount it. Where Longhorn runs, it also names the
+      nodes holding its replicas, so losing a node shows which data loses a copy.
+    icon: database
+    lifecycle: { grace: { runs: 2, duration: 10m } }
+    fields:
+      storage_class: { type: string }
+      size_gb: { type: number, title: Size (GB) }
+      phase: { type: string }
+      access_modes: { type: array }
+      volume: { type: string, description: The PersistentVolume bound to the claim. }
+      replicas: { type: number, description: Longhorn replicas of the volume. }
+      replicas_running: { type: number }
+      notes: { type: markdown }
+    relations:
+      namespace: { target: k8s_namespace, many: false, required: true, display: contain, title: Namespace, inverseTitle: Volumes }
+      workloads: { target: k8s_workload, many: true, title: Mounted by, inverseTitle: Volumes }
+      nodes: { target: k8s_node, many: true, title: Replicas on, inverseTitle: Volume replicas }
+
+  - id: sw_deployment
+    title: Deployment
+    group: Kubernetes
+    formerly: [deployment]
+    description: >
+      One time a version was rolled out: an ArgoCD sync that finished, or a last sync that failed.
+      Deployments only accumulate, so they are pushed apart from the cluster snapshot and leave by
+      age. Count them over a window to see how often and how reliably something deploys.
+    icon: rocket
+    lifecycle: { expire: { after: 180d, field: deployed_at } }
+    fields:
+      status: { type: enum, values: [succeeded, failed] }
+      revision: { type: string, description: The git revision that was synced. }
+      deployed_at: { type: datetime, description: When the sync finished. }
+      started_at: { type: datetime }
+      duration_seconds: { type: number, title: Duration (s) }
+      initiated_by: { type: string, description: The user who started it. Empty for an automated sync. }
+      automated: { type: boolean }
+      message: { type: string, description: What ArgoCD reported, for a failed sync. }
+    relations:
+      app: { target: argocd_app, many: false, title: Application, inverseTitle: Deployments }

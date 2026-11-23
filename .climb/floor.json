@@ -1,0 +1,14 @@
+{
+  "title": "The floor",
+  "metric": "Time to read and derive a copy of the database of a hub in use, the way its people use it",
+  "unit": "ms",
+  "better": "lower",
+  "score": "LOG_LEVEL=error node bench/copy.ts | tail -1",
+  "guard": ["npm run check --silent"],
+  "editable": ["src/**"],
+  "frozen": ["bench/**", "src/**/*.test.ts", "src/server/fixtures/**", "package-lock.json"],
+  "setup": "npm ci",
+  "runs": 3,
+  "noise": 0,
+  "timeout": 3600
+}

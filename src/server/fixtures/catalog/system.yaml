@@ -1,0 +1,60 @@
+# The unit the wall rolls up, and what a system needs before it counts as production.
+blueprints:
+  - id: system
+    title: System
+    group: Catalog
+    description: >
+      A thing people name: a product, a service, a platform. Systems are declared in git or in the
+      web app and everything discovered links to one. A system's status is the worst of everything
+      that points at it.
+    icon: box
+    wall: true
+    status: { relations: ['<-system'] }
+    fields:
+      description: { type: markdown, description: What it does and who it is for. }
+      owner: { type: user, description: The person or team that answers for it. }
+      tier: { type: enum, values: [critical, important, standard, experimental], default: standard }
+      repo: { type: url, title: Repository }
+      docs: { type: url, title: Documentation }
+      health: { type: healthcheck, title: Health check, description: "A URL to probe and what to expect. Several runners give a reachability matrix." }
+      notes: { type: markdown, description: Why this exists, what breaks if it goes, what to know at 3am. }
+      workloads: { type: number, title: Workloads, aggregation: { relation: '<-k8s_workload:system', fn: count } }
+      services: { type: number, title: Services, aggregation: { relation: '<-service:system', fn: count } }
+
+# A starter scorecard. Add rules per blueprint in your own catalog.
+scorecards:
+  - id: system_readiness
+    blueprint: system
+    title: Production readiness
+    description: >
+      What a system needs before it counts as production. Bronze is documented, Silver is owned and
+      exists in the real world, Gold is critical-ready.
+    levels:
+      - name: Bronze
+        rules:
+          - id: has_description
+            title: Has a description
+            description: Someone wrote down what it does.
+            where: { field: description, op: exists }
+          - id: has_repo
+            title: Links to its repository
+            where: { field: repo, op: exists }
+      - name: Silver
+        rules:
+          - id: has_owner
+            title: Has an owner
+            description: A person or team answers for it.
+            where: { field: owner, op: exists }
+          - id: has_workloads
+            title: Something discovered points at it
+            description: At least one workload, VM, or resource links here, so the system exists in the real world.
+            where: { field: workloads, op: gt, value: 0 }
+      - name: Gold
+        rules:
+          - id: has_notes
+            title: Has operator notes
+            description: Why it exists and what breaks if it goes.
+            where: { field: notes, op: exists }
+          - id: has_docs
+            title: Links to documentation
+            where: { field: docs, op: exists }

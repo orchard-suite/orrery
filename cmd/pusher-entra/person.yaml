@@ -1,0 +1,15 @@
+# The link from an Entra user to the core person, offered on its own: a hub
+# that keeps no person refuses it, and the pusher pushes the users all the
+# same. The hub links a user to the person with the same email when the
+# relation rule below is imported once (docs/modelling.md, Entra):
+#
+#   relationRules:
+#     - id: entra_user.person
+#       blueprint: entra_user
+#       relation: person
+#       match: { target: person, where: "target.email == source.email" }
+blueprints:
+  - id: entra_user
+    title: Entra user
+    relations:
+      person: { target: person, many: false, title: Person, inverseTitle: Entra users }

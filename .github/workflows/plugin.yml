@@ -1,0 +1,33 @@
+name: Plugin
+
+# Publishes the agent plugin (skills, manifest, and MCP wiring) of one tag as
+# a zip, pushed as an OCI artifact to the same public package as the hub:
+#   ghcr.io/orchard-suite/orrery:plugin-<version>
+# so an estate's marketplace can take it as an archive source without any
+# GitHub credential. The zip's sha256 is the artifact's single layer digest,
+# and the artifact is signed with cosign keyless like the images. The release
+# publishes it through the plugin action in .github/actions; run this by hand
+# to publish the plugin of a tag that was released before that.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: ./.github/actions/plugin
+        with:
+          tag: ${{ inputs.tag }}
+          token: ${{ secrets.GITHUB_TOKEN }}

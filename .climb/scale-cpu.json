@@ -1,0 +1,24 @@
+{
+  "title": "Estate at scale, CPU",
+  "metric": "CPU the hub and Postgres spend to push, link, and read an estate of 115,545 entities through the API",
+  "unit": "ms",
+  "better": "lower",
+  "score": "BENCH_PG_CONTAINER=orrery-pg BENCH_SCALE=3 LOG_LEVEL=error node bench/scale.ts | tail -1 | node -e \"const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); console.log(JSON.stringify({ value: d.metrics['cpu.total'], metrics: d.metrics }))\"",
+  "heldout": "BENCH_PG_CONTAINER=orrery-pg BENCH_SCALE=1.5 LOG_LEVEL=error node bench/scale.ts | tail -1 | node -e \"const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); console.log(JSON.stringify({ value: d.metrics['cpu.total'], metrics: d.metrics }))\"",
+  "guard": [
+    "npm run check --silent"
+  ],
+  "editable": [
+    "src/**"
+  ],
+  "frozen": [
+    "bench/**",
+    "src/**/*.test.ts",
+    "src/server/fixtures/**",
+    "package-lock.json"
+  ],
+  "setup": "npm ci",
+  "runs": 3,
+  "noise": 0,
+  "timeout": 3600
+}

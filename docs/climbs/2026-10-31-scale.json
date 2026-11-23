@@ -1,0 +1,371 @@
+{
+  "schema": 1,
+  "target": "scale",
+  "title": "Estate at scale",
+  "metric": "Time to push, link, and read an estate of 115,545 entities through the API",
+  "unit": "ms",
+  "better": "lower",
+  "repo": "orrery",
+  "branch": "climb/scale-20261031-131251",
+  "base_commit": "9ee7915d077c72de1cb3dea68bcac82f12401499",
+  "started": "2026-10-31T13:12:51Z",
+  "finished": "2026-10-31T14:31:28Z",
+  "wall_seconds": 4717.4,
+  "scoring_seconds": 3728.6,
+  "machine": {
+    "os": "macOS-27.0",
+    "cpu": "Apple M4 Max",
+    "cores": 16
+  },
+  "noise_pct": 7.631,
+  "measured_spread_pct": 7.631,
+  "baseline": {
+    "value": 205752.0,
+    "values": [
+      202642.0,
+      205752.0,
+      218343.0
+    ],
+    "metrics": {
+      "push.first": 77259,
+      "link.first": 24302,
+      "push.again": 4882,
+      "link.again": 20170,
+      "grid.open": 15434,
+      "grid.scroll": 224,
+      "grid.sort": 5360,
+      "grid.filter": 4770,
+      "search.all": 19988,
+      "search.picker": 860,
+      "entity.page": 6434,
+      "entity.related": 7392,
+      "estate.summary": 15560,
+      "estate.wall": 3088,
+      "estate.findings": 11776,
+      "edit.value": 8,
+      "edit.regrid": 836,
+      "edit.link": 0,
+      "entities": 115535,
+      "bytes.api.entities": 8398782,
+      "bytes.api.summary": 15811,
+      "bytes.api.wall": 174827,
+      "bytes.api.findings": 75278
+    },
+    "seconds": 629.561906337738
+  },
+  "final": {
+    "value": 130010.0,
+    "values": [
+      135077.0,
+      120459.0,
+      130010.0
+    ],
+    "metrics": {
+      "push.first": 11696,
+      "link.first": 21140,
+      "push.again": 4841,
+      "link.again": 22710,
+      "grid.open": 17909,
+      "grid.scroll": 260,
+      "grid.sort": 5720,
+      "grid.filter": 302,
+      "search.all": 9465,
+      "search.picker": 25,
+      "entity.page": 7321,
+      "entity.related": 10190,
+      "estate.summary": 16697,
+      "estate.wall": 3,
+      "estate.findings": 233,
+      "edit.value": 37,
+      "edit.regrid": 1461,
+      "edit.link": 0,
+      "entities": 115535,
+      "bytes.api.entities": 8398782,
+      "bytes.api.summary": 15811,
+      "bytes.api.wall": 174827,
+      "bytes.api.findings": 75278
+    }
+  },
+  "gain_pct": 36.812,
+  "heldout_baseline": {
+    "value": 104359.0,
+    "values": [
+      145151.0,
+      104359.0,
+      100869.0
+    ]
+  },
+  "heldout_final": {
+    "value": 70219.0,
+    "values": [
+      71414.0,
+      67365.0,
+      70219.0
+    ]
+  },
+  "since_last_pass": null,
+  "guard_passed": true,
+  "attempts": [
+    {
+      "n": 1,
+      "description": "batch new entities, relations, and activity rows per push batch",
+      "files": [
+        "src/server/activity.ts",
+        "src/server/entities.ts"
+      ],
+      "started": "2026-10-31T13:33:17Z",
+      "metrics": {
+        "push.first": 12867,
+        "link.first": 21005,
+        "push.again": 4877,
+        "link.again": 18609,
+        "grid.open": 14028,
+        "grid.scroll": 204,
+        "grid.sort": 4686,
+        "grid.filter": 4230,
+        "search.all": 19751,
+        "search.picker": 819,
+        "entity.page": 6106,
+        "entity.related": 7159,
+        "estate.summary": 16312,
+        "estate.wall": 3022,
+        "estate.findings": 11304,
+        "edit.value": 8,
+        "edit.regrid": 790,
+        "edit.link": 0,
+        "entities": 115535,
+        "bytes.api.entities": 8398782,
+        "bytes.api.summary": 15811,
+        "bytes.api.wall": 174827,
+        "bytes.api.findings": 75278
+      },
+      "status": "kept",
+      "reason": "22.29% better than the best so far",
+      "value": 159897.0,
+      "values": [
+        159897.0,
+        199371.0,
+        145777.0
+      ],
+      "gain_pct": 22.287,
+      "seconds": 524.43
+    },
+    {
+      "n": 2,
+      "description": "keep each blueprint's derived entities in memory until what they read moves",
+      "files": [
+        "src/server/lists.ts",
+        "src/server/read.ts"
+      ],
+      "started": "2026-10-31T13:44:13Z",
+      "metrics": {
+        "push.first": 13329,
+        "link.first": 20665,
+        "push.again": 4634,
+        "link.again": 17943,
+        "grid.open": 13816,
+        "grid.scroll": 203,
+        "grid.sort": 4678,
+        "grid.filter": 248,
+        "search.all": 8060,
+        "search.picker": 27,
+        "entity.page": 5842,
+        "entity.related": 7164,
+        "estate.summary": 13141,
+        "estate.wall": 1,
+        "estate.findings": 116,
+        "edit.value": 7,
+        "edit.regrid": 835,
+        "edit.link": 0,
+        "entities": 115535,
+        "bytes.api.entities": 8398782,
+        "bytes.api.summary": 15811,
+        "bytes.api.wall": 174827,
+        "bytes.api.findings": 75278
+      },
+      "status": "kept",
+      "reason": "30.76% better than the best so far",
+      "value": 110709.0,
+      "values": [
+        125780.0,
+        108735.0,
+        110709.0
+      ],
+      "gain_pct": 30.762,
+      "seconds": 363.76
+    },
+    {
+      "n": 3,
+      "description": "share one collator across every value comparison",
+      "files": [
+        "src/server/lists.ts",
+        "src/shared/filter.ts"
+      ],
+      "started": "2026-10-31T13:50:46Z",
+      "metrics": {
+        "push.first": 13357,
+        "link.first": 20874,
+        "push.again": 4797,
+        "link.again": 18602,
+        "grid.open": 13319,
+        "grid.scroll": 216,
+        "grid.sort": 4240,
+        "grid.filter": 173,
+        "search.all": 8186,
+        "search.picker": 19,
+        "entity.page": 5954,
+        "entity.related": 8500,
+        "estate.summary": 12587,
+        "estate.wall": 1,
+        "estate.findings": 111,
+        "edit.value": 7,
+        "edit.regrid": 718,
+        "edit.link": 0,
+        "entities": 115535,
+        "bytes.api.entities": 8398782,
+        "bytes.api.summary": 15811,
+        "bytes.api.wall": 174827,
+        "bytes.api.findings": 75278
+      },
+      "status": "reverted",
+      "reason": "0.86% worse than the best so far",
+      "value": 111661.0,
+      "values": [
+        130452.0,
+        107335.0,
+        111661.0
+      ],
+      "gain_pct": -0.86,
+      "seconds": 367.69
+    },
+    {
+      "n": 4,
+      "description": "look up a batch's relations by entity, match the source in code",
+      "files": [
+        "src/server/entities.ts"
+      ],
+      "started": "2026-10-31T14:06:06Z",
+      "metrics": {
+        "push.first": 10192,
+        "link.first": 27608,
+        "push.again": 6584,
+        "link.again": 21498,
+        "grid.open": 16102,
+        "grid.scroll": 245,
+        "grid.sort": 5446,
+        "grid.filter": 279,
+        "search.all": 9594,
+        "search.picker": 23,
+        "entity.page": 8184,
+        "entity.related": 11012,
+        "estate.summary": 16506,
+        "estate.wall": 2,
+        "estate.findings": 161,
+        "edit.value": 10,
+        "edit.regrid": 1022,
+        "edit.link": 0,
+        "entities": 115535,
+        "bytes.api.entities": 8398782,
+        "bytes.api.summary": 15811,
+        "bytes.api.wall": 174827,
+        "bytes.api.findings": 75278
+      },
+      "status": "reverted",
+      "reason": "21.76% worse than the best so far",
+      "value": 134802.0,
+      "values": [
+        134802.0,
+        138813.0,
+        134468.0
+      ],
+      "gain_pct": -21.762,
+      "seconds": 429.54
+    },
+    {
+      "n": 5,
+      "description": "look up a batch's relations by entity, match the source in code (again, under less load)",
+      "files": [
+        "src/server/entities.ts"
+      ],
+      "started": "2026-10-31T14:13:34Z",
+      "metrics": {
+        "push.first": 8316,
+        "link.first": 24708,
+        "push.again": 5578,
+        "link.again": 21409,
+        "grid.open": 21284,
+        "grid.scroll": 361,
+        "grid.sort": 5659,
+        "grid.filter": 288,
+        "search.all": 12816,
+        "search.picker": 24,
+        "entity.page": 7467,
+        "entity.related": 8797,
+        "estate.summary": 16625,
+        "estate.wall": 2,
+        "estate.findings": 158,
+        "edit.value": 11,
+        "edit.regrid": 1013,
+        "edit.link": 0,
+        "entities": 115535,
+        "bytes.api.entities": 8398782,
+        "bytes.api.summary": 15811,
+        "bytes.api.wall": 174827,
+        "bytes.api.findings": 75278
+      },
+      "status": "reverted",
+      "reason": "20.35% worse than the best so far",
+      "value": 133241.0,
+      "values": [
+        128289.0,
+        133241.0,
+        134516.0
+      ],
+      "gain_pct": -20.352,
+      "seconds": 422.43
+    }
+  ],
+  "flags": [],
+  "usage": {
+    "source": "Claude Code transcripts",
+    "sessions": [],
+    "models": {
+      "claude-opus-5-5": {
+        "input": 146,
+        "output": 41372,
+        "cache_read": 13584625,
+        "cache_write_5m": 0,
+        "cache_write_1h": 71477,
+        "requests": 68,
+        "cost": 4.1168
+      }
+    },
+    "total_cost": 4.1168,
+    "unpriced": []
+  },
+  "recipe": {
+    "title": "Estate at scale",
+    "metric": "Time to push, link, and read an estate of 115,545 entities through the API",
+    "unit": "ms",
+    "better": "lower",
+    "score": "BENCH_SCALE=3 LOG_LEVEL=error node bench/scale.ts | tail -1",
+    "heldout": "BENCH_SCALE=1.5 LOG_LEVEL=error node bench/scale.ts | tail -1",
+    "guard": [
+      "npm run check --silent"
+    ],
+    "editable": [
+      "src/**"
+    ],
+    "frozen": [
+      "bench/**",
+      "src/**/*.test.ts",
+      "src/server/fixtures/**",
+      "package-lock.json"
+    ],
+    "setup": "npm ci",
+    "runs": 3,
+    "noise": 0,
+    "timeout": 3600
+  },
+  "notes": "Pass 1 on an estate of 115,535 entities across 13 blueprints.\n\n- **A push batch writes in a few statements.** Each new entity used to cost its own insert, one insert per relation, and one activity row. Now a batch of 1,000 holds them and writes the new entities, their relations, and their activity rows in three statements at the end.\n- **Each blueprint's entities are kept in memory.** Every grid, search, picker, summary, finding, and rule used to read a whole blueprint from the database and work out its derived fields again. Now the hub keeps each blueprint's entities, derived fields and all, until something they read moves. The same events that drop a grid's kept answer drop them. A caller that adds to an entity copies it first.\n- **A copy of a kept entity keeps where its rolled-up reasons came from.** Without it, a list filtered on who points at a row would show a restricted reader a reason from a blueprint they may not see. A test covers it.\n\nTried and not kept:\n\n- One shared collator for sorting: inside the noise.\n- Looking up a batch's relations by entity, not by source: on a fresh table Postgres can pick a plan that walks every relation the source wrote once per entity (7.6 s for one lookup; 15 ms with the fix). It measured worse twice, but the whole run was slower in both, because other work loaded the machine. It goes into the next pass, which is scored on CPU time."
+}

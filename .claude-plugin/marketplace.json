@@ -1,0 +1,13 @@
+{
+  "name": "orrery",
+  "owner": { "name": "orchard-suite" },
+  "description": "Orrery: one graph of the estate, with MCP tools and skills for agents.",
+  "plugins": [
+    {
+      "name": "orrery",
+      "description": "Read an Orrery catalog, model on its shared names, and make apps describe themselves.",
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}

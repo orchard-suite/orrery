@@ -1,0 +1,50 @@
+name: Test
+
+# The repository's full check: typecheck, tests, the web build, go vet, go
+# test, and the API judge. The server tests need a Postgres, which runs
+# beside the job as a service on the port `make check` expects.
+on:
+  pull_request:
+  # The release calls this first, so a push to main runs it once.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: orrery
+          POSTGRES_PASSWORD: orrery
+          POSTGRES_DB: orrery
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U orrery"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgres://orrery:orrery@localhost:5433/orrery
+    steps:
+      # Every tag: the API judge compares openapi.json with the latest release.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: make check

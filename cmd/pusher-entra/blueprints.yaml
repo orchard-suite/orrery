@@ -1,0 +1,166 @@
+# The blueprints this pusher writes. It offers them to the hub when it starts:
+# the hub creates the ones that do not exist and adds to the rest only what
+# they lack, so they are yours to edit. Keys are prefixed with the tenant id
+# so several tenants share one estate.
+blueprints:
+  - id: entra_app
+    title: Entra enterprise app
+    group: Entra ID
+    description: >
+      Inventory: an enterprise app in an Entra tenant that people sign in to, overwritten by each push and
+      kept while the tenant still has it. Only enabled applications owned by the tenant or added by an
+      admin, with a web sign-in, are pushed; Microsoft's own principals and managed identities are not.
+      Who may sign in is anyone in the tenant when assignment is not required, otherwise the users and
+      groups assigned to it, each an entra_app_role_assignment. Entra does not pass an assignment through
+      nested groups.
+    icon: azure_enterprise_applications
+    fields:
+      app_id: { type: string, title: Application id, overridable: false, description: The app registration's client id. }
+      object_id: { type: string, title: Object id, overridable: false, description: The service principal's object id in the tenant. }
+      tenant_id: { type: string, title: Tenant id, overridable: false, description: The tenant the app is an enterprise app in. }
+      assignment_required:
+        type: boolean
+        title: Assignment required
+        description: True when only the assigned users and groups may sign in; false when anyone in the tenant may.
+      assigned_groups:
+        type: array
+        title: Assigned groups
+        description: >
+          Retired: read the app's entra_app_role_assignment entities instead. Object ids of the groups
+          assigned to the app, written until every reader has moved, then no longer.
+      assigned_users:
+        type: array
+        title: Assigned users
+        description: >
+          Retired: read the app's entra_app_role_assignment entities instead. Object ids of the users
+          assigned to the app directly, written until every reader has moved, then no longer.
+      roles:
+        type: array
+        title: Roles
+        description: >
+          The roles users and groups may be given, by value, such as Admin or Reader. An app that defines
+          none gives default access only, named default.
+      role_titles:
+        type: array
+        title: Role titles
+        description: The display name of each role, in the same order as roles.
+      launch_url:
+        type: url
+        title: Launch URL
+        description: >
+          Where a person opens the app: its sign-on URL, else its home page, else the site of its first web
+          redirect, else Microsoft's launcher for it.
+      sign_in:
+        type: enum
+        values: [oidc, saml, password]
+        title: Sign-in
+        description: The single sign-on the app is set up for.
+      publisher:
+        type: enum
+        values: [tenant, gallery]
+        description: tenant when the tenant owns the registration; gallery when an admin added someone else's app.
+      portal: { type: url, title: Entra admin center, description: The app's page in the Entra admin center. }
+      notes: { type: markdown, description: What the app is for and who answers for it. }
+
+  - id: entra_user
+    title: Entra user
+    group: Entra ID
+    description: >
+      Inventory: a person in an Entra tenant who is assigned to an app the pusher keeps or is a direct member
+      of a group assigned to one, overwritten by each push. Only enabled users are pushed. A guest is a
+      person from another tenant. Their email is their mail, else their sign-in name, in lower case: the
+      address a front door names them by.
+    icon: azure_users
+    fields:
+      object_id: { type: string, title: Object id, overridable: false, description: The user's object id in the tenant. }
+      email: { type: string, title: Email, description: Their mail, else their sign-in name, in lower case. }
+      upn: { type: string, title: Sign-in name, description: Their user principal name. }
+      user_type:
+        type: enum
+        values: [member, guest]
+        title: Type
+        description: member for the tenant's own people; guest for someone invited from another tenant.
+      enabled: { type: boolean, title: Enabled, description: Whether they may sign in at all. }
+
+  - id: entra_group
+    title: Entra group
+    group: Entra ID
+    description: >
+      Inventory: a group assigned to an app the pusher keeps, with its direct members, overwritten by each
+      push. Entra does not pass app access through nested groups, so only direct members count. A dynamic
+      group's members come from a rule, so nobody is added to it by hand.
+    icon: azure_groups
+    fields:
+      object_id: { type: string, title: Object id, overridable: false, description: The group's object id in the tenant. }
+      mail: { type: string, title: Mail, description: The group's mail address, when it has one. }
+      kind:
+        type: enum
+        values: [security, microsoft365]
+        title: Kind
+        description: microsoft365 for a Microsoft 365 group; security for any other.
+      dynamic: { type: boolean, title: Dynamic, description: True when a rule sets its members, so none can be added by hand. }
+    relations:
+      members: { target: entra_user, many: true, title: Members, inverseTitle: Groups }
+
+  - id: entra_app_role_assignment
+    title: Entra app assignment
+    group: Entra ID
+    description: >
+      Inventory: one user or group given one role on an enterprise app the pusher keeps, overwritten by each
+      push. An app's assignments say who may sign in to it and as what; a user's say which apps they hold,
+      directly. Through a group, a user holds the group's assignments too.
+    icon: azure_enterprise_applications
+    fields:
+      role: { type: string, title: Role, description: The role's value, or default for default access. }
+      principal_type:
+        type: enum
+        values: [user, group]
+        title: Assigned to
+        description: Whether a user or a group holds the role.
+    relations:
+      app: { target: entra_app, many: false, title: App, inverseTitle: Assignments }
+      user: { target: entra_user, many: false, title: User, inverseTitle: App assignments }
+      group: { target: entra_group, many: false, title: Group, inverseTitle: App assignments }
+
+  - id: it_approval
+    title: Approval
+    group: Operations
+    description: >
+      Record: a request someone has to decide, wherever it was made: access to an app or a group asked for
+      through a self-service action, or a request Entra holds (admin consent to an app, an access package).
+      One pending in Entra is written by the Entra pusher with the page to decide it on, and leaves once
+      decided there. One made through an action is closed by the action that grants or declines it. Kept a
+      year after it is decided.
+    icon: checklist
+    lifecycle:
+      expire: { after: 365d, field: decided_at }
+    fields:
+      decision:
+        type: enum
+        values: [pending, approved, declined, expired]
+        title: Decision
+        description: pending until someone decides; approved or declined then; expired when nobody did in time.
+      kind:
+        type: enum
+        values: [app_access, group_access, new_app, consent, access_package]
+        title: Kind
+        description: >
+          app_access is a person asking to be assigned to an app; group_access to be added to an access group;
+          new_app asks for an app the tenant does not have yet; consent asks an admin to consent to an app's
+          permissions; access_package is a request for an Entra access package.
+      system:
+        type: enum
+        values: [orrery, entra]
+        title: Decided in
+        description: orrery when an action here decides it; entra when it is decided on Entra's own page.
+      reason: { type: markdown, title: Reason, description: Why the requester asked. }
+      requested_by: { type: user, title: Requested by }
+      requested_at: { type: datetime, title: Requested at }
+      decided_by: { type: user, title: Decided by }
+      decided_at: { type: datetime, title: Decided at }
+      decision_note: { type: markdown, title: Decision note, description: Why it was decided as it was, and the run that did it. }
+      url: { type: url, title: Decide at, description: The page where it is decided, for one decided outside the hub. }
+    relations:
+      app: { target: entra_app, many: false, title: App, inverseTitle: Approvals }
+      group: { target: entra_group, many: false, title: Group, inverseTitle: Approvals }
+      user: { target: entra_user, many: false, title: Requester, inverseTitle: Approvals }

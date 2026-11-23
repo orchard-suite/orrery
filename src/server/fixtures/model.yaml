@@ -1,0 +1,267 @@
+# A model of who owns things and how software is put together, for the
+# tests to import as a person would. It exercises the importer; it is not a
+# model the hub ships or one to copy.
+
+blueprints:
+  # Who --------------------------------------------------------------------
+  - id: organization
+    title: Organization
+    group: Organization
+    description: >
+      The company, or the household: the top of the tree. Departments point at it. Its status is
+      the worst of its departments.
+    icon: organization
+    status: { relations: ['<-department:organization'] }
+    fields:
+      description: { type: markdown, description: What the organization is and does. }
+      departments: { type: number, aggregation: { relation: '<-department:organization', fn: count } }
+      teams: { type: number, aggregation: { relation: '<-department:organization.<-team:department', fn: count } }
+      people: { type: number, aggregation: { relation: '<-department:organization.<-team:department.<-person:teams', fn: count } }
+      notes: { type: markdown }
+
+  - id: department
+    title: Department
+    group: Organization
+    description: >
+      A part of the organization with its own leadership and budget. Every team belongs to one.
+      Its status is the worst of its teams.
+    icon: department
+    status: { relations: ['<-team:department'] }
+    fields:
+      description: { type: string }
+      cost_centre: { type: string, title: Cost centre }
+      teams: { type: number, aggregation: { relation: '<-team:department', fn: count } }
+      people: { type: number, aggregation: { relation: '<-team:department.<-person:teams', fn: count } }
+      notes: { type: markdown }
+    relations:
+      organization: { target: organization, many: false, required: true, display: contain, title: Organization, inverseTitle: Departments }
+      head: { target: person, many: false, title: Led by, inverseTitle: Leads departments }
+
+  - id: team
+    title: Team
+    group: Organization
+    description: >
+      A group of people who own things together. A team belongs to a department and may sit inside
+      another team. Anything a team answers for points at it with a `team` relation, set on the
+      thing itself or inherited from above it. Its status is the worst of the programs, workloads,
+      and services it owns.
+    icon: team
+    status: { relations: ['<-program:team', '<-sw_workload:team', '<-sw_service:team'] }
+    fields:
+      description: { type: string }
+      chat: { type: url, title: Chat channel }
+      email: { type: email }
+      organization: { type: string, chip: true, mirror: department.organization.title }
+      members: { type: number, aggregation: { relation: '<-person:teams', fn: count } }
+      sub_teams: { type: number, title: Sub-teams, aggregation: { relation: '<-team:parent', fn: count } }
+      programs: { type: number, aggregation: { relation: '<-program:team', fn: count } }
+      workloads: { type: number, aggregation: { relation: '<-sw_workload:team', fn: count } }
+      services: { type: number, aggregation: { relation: '<-sw_service:team', fn: count } }
+      repositories: { type: number, aggregation: { relation: '<-repository:team', fn: count } }
+      notes: { type: markdown, description: What the team is for and how to reach it. }
+    relations:
+      department: { target: department, many: false, required: true, display: contain, title: Department, inverseTitle: Teams }
+      parent: { target: team, many: false, title: Part of, inverseTitle: Sub-teams }
+      lead: { target: person, many: false, title: Led by, inverseTitle: Leads teams }
+
+  - id: person
+    title: Person
+    group: Organization
+    description: >
+      Someone who works here. People are on teams and teams own things. A person is not an
+      account: nothing here grants access to the hub.
+    icon: person
+    fields:
+      email: { type: email }
+      role: { type: string, chip: true, description: Job title. }
+      department: { type: string, chip: true, description: The department of the person's first team., mirror: teams.department.title }
+      notes: { type: markdown }
+    relations:
+      teams: { target: team, many: true, title: Member of, inverseTitle: Members }
+      manager: { target: person, many: false, title: Reports to, inverseTitle: Manages }
+
+  # What -------------------------------------------------------------------
+  - id: program
+    title: Program
+    group: Software
+    description: >
+      A body of work someone owns and pays for: a product, a platform, an internal system. Its
+      pid, when it has one, is the permanent id its cost is counted by, whatever the program is
+      called. It can span several repositories. Services, workloads, and repositories each name
+      the program they belong to. A team set on a program is the owner of everything in it that
+      names no team of its own. Its status is the worst of its workloads and services.
+    icon: blocks
+    wall: true
+    status: { relations: ['<-sw_workload:program', '<-sw_service:program'] }
+    fields:
+      description: { type: string, description: What it is for and who uses it. }
+      pid: { type: string, title: PID, description: The permanent id cost is counted by, such as the pid tag on its cloud resources. Empty when nothing bills to it. }
+      repositories: { type: number, aggregation: { relation: '<-repository:program', fn: count } }
+      workloads: { type: number, aggregation: { relation: '<-sw_workload:program', fn: count } }
+      services: { type: number, aggregation: { relation: '<-sw_service:program', fn: count } }
+      docs: { type: url, title: Documentation }
+      notes: { type: markdown, description: Why this exists, who pays for it, what to know before changing it. }
+    relations:
+      team: { target: team, many: false, title: Owned by, inverseTitle: Owns programs }
+
+  - id: sw_environment
+    title: Environment
+    group: Software
+    description: >
+      A place software runs as a whole: production, test, QA, a demo. It is set where things run,
+      on a subscription, a cluster, a resource group, or a namespace, and everything inside
+      inherits it. One workload runs in as many environments as it is deployed to.
+    icon: environment
+    fields:
+      type: { type: enum, values: [production, pre_production, development, sandbox], description: Whether real users depend on it. }
+      description: { type: string }
+      notes: { type: markdown }
+
+  - id: domain
+    title: Domain
+    group: Software
+    description: >
+      A high-level concern that cuts across programs: identity, billing, shipping. Anything that
+      takes part in it names it, whatever kind of thing it is: services, workloads, databases,
+      servers, outside APIs. A thing may name several. The domain's page is the whole seam in one
+      place.
+    icon: component
+    fields:
+      description: { type: string, description: What the concern is and where its edges are. }
+      order: { type: number, description: Where it sits among the domains of its scope, such as a column on a landscape view. }
+      workloads: { type: number, aggregation: { relation: '<-sw_workload:domains', fn: count } }
+      services: { type: number, aggregation: { relation: '<-sw_service:domains', fn: count } }
+      apis: { type: number, title: APIs, aggregation: { relation: '<-api:domains', fn: count } }
+      notes: { type: markdown }
+
+  - id: repository
+    title: Repository
+    group: Catalog
+    description: A Git repository on a forge. It is where a service is homed.
+    icon: repository
+    fields:
+      description: { type: string, description: The repository description. }
+      url: { type: url, title: Repository }
+      name: { type: string, description: The repository name without its organization. }
+      language: { type: string, chip: true }
+      default_branch: { type: string }
+      archived: { type: boolean }
+      last_push: { type: datetime }
+      notes: { type: markdown }
+      services: { type: number, title: Services, description: How many services are homed here., aggregation: { relation: '<-sw_service:repository', fn: count } }
+    relations:
+      program: { target: program, many: false, title: Program, inverseTitle: Repositories }
+      team: { target: team, many: false, inherit: program.team, title: Owned by, inverseTitle: Owns repositories }
+      domains: { target: domain, many: true, title: Domains, inverseTitle: Repositories }
+
+  - id: sw_service
+    title: Service
+    group: Catalog
+    description: One deployable piece of software people run and answer for. It is homed in a repository.
+    icon: service
+    fields:
+      description: { type: string, description: What it does and who it is for. }
+      tier: { type: enum, values: [mission_critical, customer_facing, internal, other], description: How much it matters when this is down. }
+      lifecycle: { type: enum, values: [production, staging, development, experimental, deprecated] }
+      url: { type: url, title: URL, description: Where it is reached. }
+      runbook: { type: url, title: Runbook }
+      docs: { type: url, title: Documentation }
+      notes: { type: markdown }
+      language: { type: string, chip: true, mirror: repository.language }
+      repository_url: { type: url, title: Repository URL, mirror: repository.url }
+      workloads: { type: number, description: How many workloads deploy it., aggregation: { relation: '<-sw_workload:services', fn: count } }
+      apis: { type: number, title: APIs, description: How many APIs it provides., aggregation: { relation: '<-api:service', fn: count } }
+      origin: { type: enum, values: [built, adopted], chip: true, description: Built here, or open source the estate runs. }
+      category: { type: string, chip: true, description: Its group within a domain, such as a box on a landscape view. }
+    relations:
+      repository: { target: repository, many: false, title: Homed in, inverseTitle: Services }
+      program: { target: program, many: false, title: Program, inverseTitle: Services }
+      team: { target: team, many: false, inherit: program.team, title: Owned by, inverseTitle: Owns services }
+      domains: { target: domain, many: true, title: Domains, inverseTitle: Services }
+      consumes: { target: api, many: true, title: Consumes, inverseTitle: Consumed by }
+      will_consume: { target: api, many: true, title: Will consume, inverseTitle: Wanted by }
+
+  - id: sw_workload
+    title: Workload
+    group: Software
+    description: >
+      Services that are deployed together: the Active Directory workload is an API and an
+      analyzer. It comes from how things are deployed, not from who owns what, so one service may
+      be part of several workloads, and a service may be in none. One workload is deployed to as
+      many environments as it needs. Its status is the worst of its services and of whatever
+      deploys it.
+    icon: stack
+    wall: true
+    status: { relations: [services] }
+    fields:
+      description: { type: string, description: What it does and who it is for. }
+      service_count: { type: number, title: Services, aggregation: { relation: services, fn: count } }
+      runbook: { type: url, title: Runbook }
+      docs: { type: url, title: Documentation }
+      notes: { type: markdown, description: Why this exists, what breaks if it goes, what to know at 3am. }
+    relations:
+      program: { target: program, many: false, title: Program, inverseTitle: Workloads }
+      services: { target: sw_service, many: true, title: Services, inverseTitle: Part of workloads }
+      team: { target: team, many: false, inherit: program.team, title: Owned by, inverseTitle: Owns workloads }
+      domains: { target: domain, many: true, title: Domains, inverseTitle: Workloads }
+
+  - id: api
+    title: API
+    group: Software
+    description: >
+      An interface a service provides to its consumers: REST, GraphQL, gRPC, an event stream. A
+      service's own administration endpoints are not one. Any source may write these, and one
+      can be made from an uploaded OpenAPI or Swagger document.
+    icon: api
+    fields:
+      description: { type: string }
+      kind: { type: enum, values: [rest, graphql, grpc, event, mcp, web] }
+      visibility: { type: enum, values: [internal, partner, public], description: Who may call it. }
+      external: { type: boolean, description: True for an API someone else runs and this estate only consumes. }
+      lifecycle: { type: enum, values: [design, development, production, deprecated] }
+      category: { type: string, chip: true, description: Its group within a domain, such as a box on a landscape view. }
+      version: { type: string }
+      base_url: { type: url, title: Base URL }
+      spec: { type: openapi, title: Specification, description: The OpenAPI or Swagger document. }
+      health: { type: healthcheck, title: Health check }
+      notes: { type: markdown }
+    relations:
+      service: { target: sw_service, many: false, title: Provided by, inverseTitle: Provides APIs }
+      team: { target: team, many: false, inherit: service.team, title: Owned by, inverseTitle: Owns APIs }
+      domains: { target: domain, many: true, title: Domains, inverseTitle: APIs }
+
+scorecards:
+  - id: service_hygiene
+    blueprint: sw_service
+    title: Service hygiene
+    description: Whether a service is placed in the model well enough to be found, owned, and operated.
+    levels:
+      - name: Placed
+        rules:
+          - { id: has_repository, title: Homed in a repository, where: { relation: repository } }
+          - { id: has_description, title: Has a description, where: { field: description, op: exists } }
+      - name: Owned
+        rules:
+          - { id: has_program, title: Belongs to a program, where: { relation: program } }
+          - { id: has_team, title: Owned by a team, description: Set on the service or inherited from its program., where: { relation: team } }
+          - { id: classified, title: Has a tier and a lifecycle, where: { and: [{ field: tier, op: exists }, { field: lifecycle, op: exists }] } }
+      - name: Operable
+        rules:
+          - { id: has_runbook, title: Has a runbook, where: { field: runbook, op: exists } }
+          - { id: has_docs, title: Has documentation, where: { field: docs, op: exists } }
+
+  - id: program_hygiene
+    blueprint: program
+    title: Program hygiene
+    description: Whether a program is described, owned, and filled in.
+    levels:
+      - name: Described
+        rules:
+          - { id: has_description, title: Has a description, where: { field: description, op: exists } }
+      - name: Owned
+        rules:
+          - { id: has_team, title: Owned by a team, where: { relation: team } }
+      - name: Populated
+        rules:
+          - { id: has_services, title: Has services, where: { relation: '<-sw_service:program' } }
+          - { id: has_workloads, title: Has workloads, where: { relation: '<-sw_workload:program' } }

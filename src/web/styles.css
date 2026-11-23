@@ -1,0 +1,557 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+@import '@fontsource/instrument-serif/400.css';
+@import '@fontsource/instrument-serif/400-italic.css';
+@import '@xyflow/react/dist/style.css';
+
+/* A window wide and tall enough that a page may fill it and scroll its parts inside. `useDesk` in components/ui.tsx must match. */
+@custom-variant desk (@media (width >= 80rem) and (height >= 46rem));
+
+@theme {
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  /* The voice of a verdict: a headline that says how the estate is, never a label or a control. */
+  --font-serif: 'Instrument Serif', ui-serif, Georgia, serif;
+
+  --color-ink-950: #0a0b0e;
+  --color-ink-900: #101217;
+  --color-ink-850: #151821;
+  --color-ink-800: #1b1f2a;
+  --color-ink-700: #262b38;
+  --color-ink-600: #363c4c;
+  --color-ink-500: #818898;
+  --color-ink-400: #8c93a3;
+  --color-ink-300: #979eb0;
+  --color-ink-200: #c6cbd6;
+  --color-ink-100: #eaecf1;
+  --color-ink-50: #ffffff;
+
+  --color-red: #ff4a3d;
+  --color-red-dim: #7a2620;
+  --color-amber: #ffb02e;
+  --color-amber-dim: #6e4c12;
+  --color-green: #2fd07a;
+  --color-green-dim: #16593a;
+  --color-grey: #5f6778;
+  --color-signal-red: #ff4a3d;
+  --color-signal-amber: #ffb02e;
+  --color-signal-green: #2fd07a;
+  /* What asks to be sure before it removes something: red in every mode, zen included, where red itself goes quiet. */
+  --color-danger: #ff4a3d;
+  --color-danger-dim: #7a2620;
+  /* A planet on the sky in zen mode, where the sky draws no status. */
+  --color-calm: #8d99c4;
+  --color-orbit: #7c9cff;
+  --color-edge: #5f6473;
+  /* The ring on what is open in an editor. */
+  --color-edit: #ff8f3a;
+  /* A terminal's colours in a run's log, where no other token is one: magenta, cyan, and the bright ones. Red,
+     green, yellow, and blue are red, green, amber, and orbit; black and white are inks. */
+  --color-ansi-magenta: #e07be0;
+  --color-ansi-cyan: #3cc8d8;
+  --color-ansi-red-bright: #ff9c92;
+  --color-ansi-green-bright: #7be8ad;
+  --color-ansi-yellow-bright: #ffd872;
+  --color-ansi-blue-bright: #aebfff;
+  --color-ansi-magenta-bright: #f2a9f2;
+  --color-ansi-cyan-bright: #86e4ee;
+}
+
+/* The dark theme is the default; light swaps the same tokens, so every class follows. Dark runs from ink-950, the
+   night behind everything, to ink-50, the brightest text; light runs the same scale from a pale sky to deep ink.
+   Contrast, in both themes, on every surface from ink-950 to ink-800 (WCAG 2.2 AA):
+   - text: ink-500 and up, and red, amber, green, and orbit, read at 4.5:1 or more. ink-600 and below are for rules only.
+   - ansi: a terminal's colours in a log are text, and each reads at 4.5:1 or more. In light a bright one is the
+     deeper of its pair, since a paler one would not read.
+   - edge: the border of a field, which says where to type, reads at 3:1 or more.
+   - signal: a lamp's colour, red, amber, and green, and grey for a status not known, at 3:1 or more. A lamp is a
+     shape, not text, so in light it keeps a brighter colour than the text of the same name.
+   - a chip's text is its colour pulled toward ink-50 by --chip-ink, enough for 4.5:1 on its own tint. */
+@layer base {
+  /* A scroll bar only says where you are, so it is thin and quiet, and brightens while the pointer is over what it scrolls. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-700) transparent;
+  }
+  *:hover {
+    scrollbar-color: var(--color-ink-600) transparent;
+  }
+  :root {
+    color-scheme: dark;
+    --chip-ink: 72%;
+    /* A phone's tab bar floats: its gap above the edge, or above the strip the system keeps there, and the room a page leaves for it. */
+    --tab-gap: max(0.75rem, calc(env(safe-area-inset-bottom) - 0.25rem));
+    --tab-bar: calc(3.75rem + var(--tab-gap));
+    /* The colours a style object or an SVG reads, which no utility class names. */
+    --color-line: #3d4456;
+    --color-grid: #20242f;
+    /* A scorecard level's colour runs by its place on the ladder, from violet at the first to cyan at the top, so neighbouring levels differ in hue; no level is none. Each reads at 3:1 on every surface. */
+    --color-level-none: #6b7387;
+    --color-level-low: #8a6ae8;
+    --color-level-top: #6fd2ff;
+    --color-shade: rgba(0, 0, 0, 0.55);
+    --elevation-card: 0 1px 0 rgba(0, 0, 0, 0.4);
+    --elevation-drawer: -12px 0 40px rgba(0, 0, 0, 0.5);
+    /* The atlas under the sky (components/Atlas.tsx and the pages that draw it): the sea, the land, and the weather.
+       Storms are mixed from red, so zen quiets them with it; fog is never green, so no data never reads as a pass. */
+    --color-atlas-space: #0c1020;
+    --color-atlas-sea: #13213f;
+    --color-atlas-sea-deep: #070b17;
+    --color-atlas-rim: #9fb4ff;
+    --color-atlas-shallows: #2c5b6e;
+    --color-atlas-coast: #8fb3c4;
+    --color-atlas-field: #46653a;
+    --color-atlas-field-row: #55784a;
+    --color-atlas-field-edge: #6f9160;
+    --color-atlas-wild: #25322a;
+    --color-atlas-wild-dot: #34473a;
+    --color-atlas-bare: #15191d;
+    --color-atlas-bare-line: #3a414b;
+    --color-atlas-hedge: #a7b07a;
+    --color-atlas-earth: #111712;
+    --color-atlas-furrow: #18211a;
+    --color-atlas-fog: #a9b1c2;
+    --color-atlas-storm: color-mix(in oklab, var(--color-red) 70%, #000);
+    --color-atlas-stem: #2b9a5f;
+    --color-atlas-awn: #a8f5c8;
+    --color-atlas-snap: color-mix(in oklab, var(--color-red) 72%, #000);
+    --color-atlas-ghost: #b9c0cd;
+    --color-atlas-stake: #8a7a62;
+    --color-atlas-route: #ffd27a;
+    /* The route's gold as text: what a walk grows, said in words. AA on the panel and the earth. */
+    --color-atlas-route-ink: #ffd27a;
+    --color-atlas-halo: rgba(10, 11, 14, 0.88);
+    /* Open ground on a continent's field: a muted tone, so the gardens lead. */
+    --color-atlas-recede: #1a1d21;
+    --color-atlas-soil: #1f2420;
+    /* A planet's cells: one with a broken check, one where every check holds. */
+    --color-atlas-cell-fail: color-mix(in oklab, var(--color-red) 78%, #1a0a08);
+    /* A cell where some of its checks are broken, fewer than half: a lighter step of the same red. */
+    --color-atlas-cell-some: color-mix(in oklab, var(--color-atlas-cell-fail) 45%, var(--color-atlas-bare));
+    --color-atlas-cell-pass: color-mix(in oklab, var(--color-signal-green) 58%, #0d1a12);
+    --sky:
+      radial-gradient(1100px 500px at 15% -10%, rgba(124, 156, 255, 0.08), transparent 60%),
+      radial-gradient(900px 500px at 90% 0%, rgba(255, 176, 46, 0.06), transparent 60%);
+
+    /* The value colours of VALUE_COLORS in src/shared/model.ts: chips and distribution bars.
+       Set on :root, not in @theme, which drops a variable no utility class uses. */
+    --color-v-blue: #4c8dff;
+    --color-v-turquoise: #22c3c3;
+    --color-v-green: #2fd07a;
+    --color-v-lime: #9fd341;
+    --color-v-yellow: #f2c43d;
+    --color-v-orange: #ff8f3a;
+    --color-v-red: #ff5148;
+    --color-v-pink: #f05fae;
+    --color-v-purple: #9d7bff;
+    --color-v-brown: #b9845a;
+    --color-v-grey: #7d8597;
+  }
+  :root[data-theme='light'] {
+    color-scheme: light;
+    --chip-ink: 60%;
+    --color-ink-950: #eef1f7;
+    --color-ink-900: #f7f8fc;
+    --color-ink-850: #ffffff;
+    --color-ink-800: #e7ebf3;
+    --color-ink-700: #d8dde8;
+    --color-ink-600: #c2c9d7;
+    --color-ink-500: #62687b;
+    --color-ink-400: #555d72;
+    --color-ink-300: #4a5167;
+    --color-ink-200: #2c3245;
+    --color-ink-100: #151a2a;
+    --color-ink-50: #070912;
+
+    --color-red: #be392e;
+    --color-red-dim: #efc3be;
+    --color-amber: #975b00;
+    --color-amber-dim: #ecd5a6;
+    --color-green: #137845;
+    --color-green-dim: #b9e2cb;
+    --color-grey: #878e9c;
+    --color-signal-red: #d23f33;
+    --color-signal-amber: #b26b00;
+    --color-signal-green: #16894f;
+    --color-danger: #be392e;
+    --color-danger-dim: #efc3be;
+    --color-calm: #7682b0;
+    --color-orbit: #475fce;
+    --color-edge: #8e95a3;
+    --color-edit: #dc6a14;
+    --color-ansi-magenta: #9c2f9c;
+    --color-ansi-cyan: #0a6f7d;
+    --color-ansi-red-bright: #b8231a;
+    --color-ansi-green-bright: #08733a;
+    --color-ansi-yellow-bright: #7a4a00;
+    --color-ansi-blue-bright: #2b50d8;
+    --color-ansi-magenta-bright: #ad27ad;
+    --color-ansi-cyan-bright: #006a8a;
+
+    --color-v-blue: #2f6fdf;
+    --color-v-turquoise: #0f9696;
+    --color-v-green: #1d9a5a;
+    --color-v-lime: #67960f;
+    --color-v-yellow: #b08600;
+    --color-v-orange: #dc6a14;
+    --color-v-red: #dd3c32;
+    --color-v-pink: #cf3f8c;
+    --color-v-purple: #7656e3;
+    --color-v-brown: #94643e;
+    --color-v-grey: #6f778a;
+
+    --color-line: #b3bbcc;
+    --color-grid: #d3d9e4;
+    --color-level-none: #7a8295;
+    --color-level-low: #7650d4;
+    --color-level-top: #0a6290;
+    --color-shade: rgba(26, 32, 56, 0.16);
+    --elevation-card: 0 1px 2px rgba(26, 32, 56, 0.08), 0 1px 0 rgba(26, 32, 56, 0.04);
+    --elevation-drawer: -12px 0 40px rgba(26, 32, 56, 0.12);
+    /* The atlas by day: a pale sea, land in daylight, the same weather. */
+    --color-atlas-space: #dfe5f2;
+    --color-atlas-sea: #a9c3e6;
+    --color-atlas-sea-deep: #7e9fcf;
+    --color-atlas-rim: #475fce;
+    --color-atlas-shallows: #c4dde6;
+    --color-atlas-coast: #4d7a8f;
+    --color-atlas-field: #8fb47a;
+    --color-atlas-field-row: #a3c58f;
+    --color-atlas-field-edge: #5f8a4d;
+    --color-atlas-wild: #c9d3bd;
+    --color-atlas-wild-dot: #b3c0a5;
+    --color-atlas-bare: #8d939c;
+    --color-atlas-bare-line: #7a8089;
+    --color-atlas-hedge: #6b7340;
+    --color-atlas-earth: #e6ebdc;
+    --color-atlas-furrow: #dbe2cf;
+    --color-atlas-fog: #5b6474;
+    --color-atlas-storm: color-mix(in oklab, var(--color-red) 80%, #fff);
+    --color-atlas-stem: #16894f;
+    --color-atlas-awn: #0f5c35;
+    --color-atlas-snap: var(--color-red);
+    --color-atlas-ghost: #6f778a;
+    --color-atlas-stake: #7a6544;
+    --color-atlas-route: #b26b00;
+    --color-atlas-route-ink: #8a5200;
+    --color-atlas-halo: rgba(247, 248, 252, 0.9);
+    --color-atlas-recede: #d9dcd6;
+    --color-atlas-soil: #d3d9c6;
+    --color-atlas-cell-fail: color-mix(in oklab, var(--color-red) 70%, #fff);
+    /* A cell where some of its checks are broken, fewer than half: a lighter step of the same red. */
+    --color-atlas-cell-some: color-mix(in oklab, var(--color-atlas-cell-fail) 45%, var(--color-atlas-bare));
+    --color-atlas-cell-pass: color-mix(in oklab, var(--color-signal-green) 60%, #fff);
+    /* Daylight: the same two washes, a blue sky high on the left and the sun low on the right. */
+    --sky:
+      radial-gradient(1100px 520px at 15% -10%, rgba(74, 99, 214, 0.1), transparent 60%),
+      radial-gradient(900px 520px at 90% 0%, rgba(255, 176, 46, 0.05), transparent 60%);
+  }
+  /* Zen mode: the same tokens, quieter. Red, amber, and green turn to rose, sand, and sage, and the value colours that
+     read as alarm follow; danger keeps its red. Each keeps the contrast its token promises above, in both themes. */
+  :root[data-zen] {
+    --color-red: #d99c94;
+    --color-red-dim: #4a3330;
+    --color-amber: #cfb88e;
+    --color-amber-dim: #4a4130;
+    --color-green: #8fc6a3;
+    --color-signal-red: #c98b84;
+    --color-signal-amber: #c2a878;
+    --color-signal-green: #79b493;
+    --color-v-red: #d4918a;
+    --color-v-orange: #d3a27e;
+    --color-v-yellow: #cdbb84;
+  }
+  :root[data-zen][data-theme='light'] {
+    --color-red: #93554e;
+    --color-red-dim: #e6d2cf;
+    --color-amber: #7a6236;
+    --color-amber-dim: #e6dcc6;
+    --color-green: #3a7252;
+    --color-signal-red: #b07068;
+    --color-signal-amber: #9c8048;
+    --color-signal-green: #5a9070;
+    --color-v-red: #a8615a;
+    --color-v-orange: #a9714a;
+    --color-v-yellow: #94803f;
+  }
+  html {
+    background: var(--color-ink-950);
+    color: var(--color-ink-100);
+    font-family: var(--font-sans);
+    font-optical-sizing: auto;
+    -webkit-font-smoothing: antialiased;
+    /* A word longer than its line (an id, a digest, an address) breaks rather than running off a phone's screen. */
+    overflow-wrap: break-word;
+  }
+  body {
+    min-height: 100vh;
+    background-image: var(--sky);
+  }
+  ::selection {
+    background: var(--color-amber);
+    color: var(--color-ink-950);
+  }
+  a {
+    color: inherit;
+  }
+  /* A hint in an empty field is text, so it keeps text contrast in both themes. */
+  ::placeholder {
+    color: var(--color-ink-500);
+    opacity: 1;
+  }
+  /* One focus ring for everything a keyboard reaches, in both themes. A pointer never draws it. */
+  :focus-visible {
+    outline: 2px solid var(--color-orbit);
+    outline-offset: 2px;
+  }
+  button {
+    cursor: pointer;
+  }
+}
+
+@utility lamp-* {
+  background: --value(--color- *);
+  box-shadow: 0 0 0 1px color-mix(in oklab, --value(--color- *) 40%, transparent), 0 0 10px color-mix(in oklab, --value(--color- *) 45%, transparent);
+}
+
+/* A button's look, for a link or a label that acts as one too. `btn` is the shape; the kind gives it its colours.
+   A hover never sets a filter or a transform: either makes the button the box its `after:` cover is laid in. */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-[13px] font-medium whitespace-nowrap transition-colors disabled:opacity-40;
+}
+@utility btn-ghost {
+  @apply border-ink-600 bg-ink-850 text-ink-200 hover:border-ink-500 hover:bg-ink-800 hover:text-ink-100;
+}
+@utility btn-solid {
+  @apply border-transparent bg-orbit text-ink-950 hover:bg-[color-mix(in_oklab,var(--color-orbit)_85%,var(--color-ink-50))];
+}
+@utility btn-danger {
+  @apply border-danger-dim bg-ink-850 text-danger hover:border-danger hover:bg-danger/10;
+}
+/* A page's name: the serif voice the verdict on Now speaks in, so every page opens the same way. */
+@utility page-title {
+  @apply font-serif text-[34px] leading-[1.08] tracking-[-0.01em] break-words text-ink-50 md:text-[44px];
+}
+/* A small label over a value or a column: sentence case, never shouted. */
+@utility label {
+  @apply text-[12px] font-medium text-ink-400;
+}
+
+@utility elevate-card {
+  box-shadow: var(--elevation-card);
+}
+@utility elevate-pop {
+  box-shadow: 0 8px 30px var(--color-shade);
+}
+@utility elevate-drawer {
+  box-shadow: var(--elevation-drawer);
+}
+
+/* The two graph pages. A card slides to its new place; a box body lets the pointer through to the pane so a drag there pans. */
+.graph .react-flow__node:not(.dragging) {
+  transition: transform 300ms ease;
+}
+.graph .react-flow__node.box-node {
+  pointer-events: none !important; /* the wrapper carries an inline value */
+}
+.graph .react-flow__node.box-node .drag-handle {
+  pointer-events: auto;
+}
+.graph .react-flow__edge.virtual .react-flow__edge-path {
+  opacity: 0.7;
+}
+/* React Flow takes its colours from the theme's tokens; its pane is clear so the panel behind it shows. */
+.graph .react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-label-background-color: var(--color-ink-900);
+  --xy-edge-label-color: var(--color-ink-300);
+  --xy-connectionline-stroke: var(--color-orbit);
+  --xy-handle-background-color: var(--color-ink-500);
+  --xy-handle-border-color: var(--color-ink-850);
+  --xy-selection-background-color: color-mix(in oklab, var(--color-orbit) 8%, transparent);
+  --xy-selection-border: 1px dotted color-mix(in oklab, var(--color-orbit) 70%, transparent);
+}
+.graph .react-flow__minimap {
+  --xy-minimap-background-color: var(--color-ink-900);
+  --xy-minimap-mask-background-color: color-mix(in oklab, var(--color-ink-950) 75%, transparent);
+  border: 1px solid var(--color-ink-700);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.graph .react-flow__controls {
+  background: var(--color-ink-900);
+  border: 1px solid var(--color-ink-700);
+  border-radius: 4px;
+  box-shadow: none;
+}
+.graph .react-flow__controls-button {
+  background: transparent;
+  border-bottom: 1px solid var(--color-ink-800);
+  color: var(--color-ink-300);
+  fill: var(--color-ink-300);
+}
+.graph .react-flow__controls-button:hover {
+  background: var(--color-ink-800);
+  color: var(--color-ink-100);
+}
+.graph .react-flow__controls-button svg {
+  max-width: 14px;
+  max-height: 14px;
+}
+.graph .react-flow__controls-button svg.lucide {
+  fill: none;
+  stroke: currentColor;
+}
+
+/* A select looks like every other field: the browser's own box is drawn away, and a chevron says it opens.
+   Unlayered, so the room for its chevron wins over the padding a utility gives the field. */
+select:not([multiple]) {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238c93a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 14px;
+  padding-right: 1.75rem;
+}
+
+/* A tick and its words are one target: the row is at least as tall as the floor for a target, and on a phone as tall as a thumb. */
+label:has(> input[type='checkbox'], > input[type='radio']) {
+  min-height: 1.5rem;
+}
+@media (max-width: 767px) {
+  label:has(> input[type='checkbox'], > input[type='radio']) {
+    min-height: 2.75rem;
+  }
+  /* What the page scrolls to, such as a field a person taps, stops above the tab bar, not under it. */
+  html {
+    scroll-padding-bottom: calc(var(--tab-bar) + 0.5rem);
+  }
+}
+
+/* Safari on a phone zooms the page into any field with text under 16px. Unlayered, so it wins over the utilities that size a field smaller.
+   A page's name typed in place is far larger already, and keeps its size. */
+@media (max-width: 767px) {
+  input:not([type='checkbox'], [type='radio'], .page-title),
+  select,
+  textarea:not(.page-title) {
+    font-size: 16px;
+  }
+}
+
+/* A person who asks for less motion gets none: every transition and animation lands at once. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* In zen mode a lamp sits still on the page, with no light round it. Unlayered, so it wins over the lamp's utility. */
+:root[data-zen] .lamp {
+  box-shadow: none;
+}
+
+/* Windows high contrast replaces every colour with its own few. A lamp is its colour, so it keeps it. */
+@media (forced-colors: active) {
+  .lamp {
+    forced-color-adjust: none;
+  }
+}
+
+/* A sheet on a phone: its menu rows are tall enough for a thumb. */
+[data-sheet] [role^='menuitem'] {
+  min-height: 44px;
+  padding-inline: 1rem;
+}
+
+/* Text set on a picture of the atlas: a halo of the night behind it, so a name reads over land, sea, and weather. */
+.atlas-halo {
+  paint-order: stroke;
+  stroke: var(--color-atlas-halo);
+  stroke-linejoin: round;
+}
+/* A cell of land lights up under the pointer; nothing in the atlas moves on its own. */
+.atlas-cell:hover {
+  filter: brightness(1.35);
+}
+
+/* A layer of the atlas reached from the layer above opens out from where the reader pressed: once, briefly, and not at all where less motion is asked for. */
+@keyframes atlas-arrive {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.atlas-arrive {
+  animation: atlas-arrive 240ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .atlas-arrive {
+    animation: none;
+  }
+}
+
+/* A report's edition as the hub draws it (src/shared/report-draw.ts, the web profile): every colour a token, so both themes and zen apply. */
+.rp { color: var(--color-ink-100); font-size: 14px; line-height: 1.55; }
+.rp-h2 { font-size: 20px; font-weight: 600; margin: 28px 0 8px; }
+.rp-h3 { font-size: 16px; font-weight: 600; margin: 20px 0 8px; }
+.rp-h4 { font-size: 14px; font-weight: 600; margin: 16px 0 6px; color: var(--color-ink-200); }
+.rp-text p, .rp-prose p { margin: 0 0 10px; }
+.rp-prose { border-left: 2px solid var(--color-edge); padding-left: 12px; }
+.rp-h4 { font-size: 14px; font-weight: 600; margin: 14px 0 6px; }
+.rp-prose ul, .rp-prose ol { margin: 0 0 10px; padding-left: 20px; list-style: revert; }
+.rp-prose li { margin: 0 0 3px; }
+.rp-prose code { font-family: var(--font-mono); font-size: 0.9em; }
+.rp-prose a, .rp-text a:not(.btn) { color: var(--color-orbit); text-decoration: underline; }
+.rp-lead { border-left: 3px solid var(--color-orbit); background: var(--color-ink-900); border-radius: 0 8px 8px 0; padding: 12px 14px 2px; font-size: 15px; }
+.rp-prose table { margin: 0 0 10px; }
+.rp-block { margin: 16px 0; }
+.rp-gap { color: var(--color-ink-400); font-style: italic; font-size: 13px; margin: 4px 0; }
+.rp-note { color: var(--color-ink-400); font-size: 12px; margin: 6px 0 0; }
+.rp-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.rp-stat { border: 1px solid var(--color-ink-700); background: var(--color-ink-900); border-radius: 8px; padding: 10px 12px; }
+.rp-stat-name { color: var(--color-ink-300); font-size: 12px; }
+.rp-stat-value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rp-change { font-size: 12px; color: var(--color-ink-300); }
+.rp-good { color: var(--color-green); }
+.rp-bad { color: var(--color-red); }
+.rp-tone-good { color: var(--color-green); }
+.rp-tone-warn { color: var(--color-amber); }
+.rp-tone-bad { color: var(--color-red); }
+.rp-fill-good { background: var(--color-green); }
+.rp-fill-warn { background: var(--color-amber); }
+.rp-fill-bad { background: var(--color-red); }
+.rp-mark { font-size: 0.8em; }
+.rp-stat-good { border-top: 3px solid var(--color-green); }
+.rp-stat-warn { border-top: 3px solid var(--color-amber); }
+.rp-stat-bad { border-top: 3px solid var(--color-red); }
+.rp-table td[class^="rp-tone-"] { font-weight: 600; }
+.rp-score th[scope="row"] { color: var(--color-ink-50); font-weight: 600; border-bottom: 1px solid var(--color-ink-700); white-space: nowrap; }
+.rp-spark { display: inline-flex; align-items: flex-end; gap: 2px; height: 18px; vertical-align: middle; }
+.rp-spark-bar { width: 7px; border-radius: 1px; background: var(--color-orbit); }
+.rp-scroll { overflow-x: auto; }
+.rp-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.rp-table th { text-align: left; color: var(--color-ink-300); font-weight: 500; border-bottom: 1px solid var(--color-edge); padding: 6px 8px; white-space: nowrap; }
+.rp-table td { border-bottom: 1px solid var(--color-ink-700); padding: 6px 8px; font-variant-numeric: tabular-nums; }
+.rp-bars { display: grid; gap: 4px; }
+.rp-bar-row { display: grid; grid-template-columns: minmax(80px, 30%) 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
+.rp-bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-bar-track { position: relative; height: 12px; }
+.rp-bar, .rp-bar-was { position: absolute; left: 0; border-radius: 2px; }
+.rp-bar { top: 2px; height: 8px; background: var(--color-orbit); }
+.rp-bar-was { top: 0; height: 12px; border: 1px solid var(--color-ink-400); }
+.rp-bar-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 8px; vertical-align: -1px; }
+.rp-key-now { background: var(--color-orbit); }
+.rp-key-was { border: 1px solid var(--color-ink-400); }
+.rp-chart { width: 100%; height: auto; max-height: 240px; }
+.rp-axis { fill: var(--color-ink-400); font-size: 11px; }
+.rp-grid { stroke: var(--color-ink-700); stroke-width: 1; }

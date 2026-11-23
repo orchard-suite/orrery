@@ -1,0 +1,91 @@
+name: Plugin
+description: >
+  Publishes the agent plugin (skills, manifest, and MCP wiring) of the
+  checked-out tag as a zip, pushed as an OCI artifact to the hub's public
+  package, ghcr.io/orchard-suite/orrery:plugin-<version>, and signed with cosign
+  keyless like the images. The zip's sha256 is the artifact's single layer
+  digest.
+inputs:
+  tag:
+    description: The release tag, such as v1.33.0; it must match the plugin manifest
+    required: true
+  token:
+    description: A token that pushes to ghcr.io, the workflow's GITHUB_TOKEN
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check the tag matches the plugin manifest
+      shell: bash
+      id: version
+      env:
+        TAG: ${{ inputs.tag }}
+      run: |
+        version=$(jq -r .version .claude-plugin/plugin.json)
+        if [ "v$version" != "$TAG" ]; then
+          echo "Tag $TAG does not match .claude-plugin/plugin.json version $version" >&2
+          exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+    # The plugin root sits at the top of the zip: the manifest, the skills,
+    # the MCP wiring, and the one script the wiring calls. Nothing else of
+    # the repository goes in.
+    - name: Zip the plugin
+      shell: bash
+      id: zip
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        set -eu
+        stage=$(mktemp -d)
+        mkdir -p "$stage/.claude-plugin" "$stage/scripts"
+        cp .claude-plugin/plugin.json "$stage/.claude-plugin/"
+        cp -R skills "$stage/skills"
+        cp .mcp.json "$stage/.mcp.json"
+        cp scripts/mcp-headers.sh "$stage/scripts/"
+        zip="orrery-plugin-$VERSION.zip"
+        (cd "$stage" && zip -qr -X "$GITHUB_WORKSPACE/$zip" .)
+        echo "file=$zip" >> "$GITHUB_OUTPUT"
+        echo "sha256=$(sha256sum "$zip" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+    - uses: ./.github/actions/tools
+      with:
+        need: oras cosign
+    - name: Push the plugin as an OCI artifact
+      shell: bash
+      id: push
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        FILE: ${{ steps.zip.outputs.file }}
+      run: |
+        set -eu
+        echo "${{ inputs.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+        oras push "ghcr.io/orchard-suite/orrery:plugin-$VERSION" \
+          --artifact-type application/vnd.orchard-suite.claude-plugin.v1+zip \
+          --annotation "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+          --annotation "org.opencontainers.image.version=$VERSION" \
+          --format go-template='{{.digest}}' \
+          "$FILE:application/zip" > digest.txt
+        echo "digest=$(cat digest.txt)" >> "$GITHUB_OUTPUT"
+    - name: Sign and verify the plugin artifact
+      shell: bash
+      env:
+        IDENTITY: ^https://github.com/${{ github.repository }}/
+        REF: ghcr.io/orchard-suite/orrery@${{ steps.push.outputs.digest }}
+      run: |
+        cosign sign --yes "$REF"
+        cosign verify "$REF" \
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+          --certificate-identity-regexp "$IDENTITY" > /dev/null
+    - name: Record what was published
+      shell: bash
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        SHA256: ${{ steps.zip.outputs.sha256 }}
+        DIGEST: ${{ steps.push.outputs.digest }}
+      run: |
+        {
+          echo "## Agent plugin"
+          echo
+          echo "- \`ghcr.io/orchard-suite/orrery:plugin-$VERSION\` ($DIGEST)"
+          echo "- zip sha256 \`$SHA256\`"
+        } >> "$GITHUB_STEP_SUMMARY"

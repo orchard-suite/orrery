@@ -1,0 +1,63 @@
+# Ties what the Kubernetes pusher writes into a model that has `sw_service`,
+# `sw_workload`, `sw_environment`, and `team`. Bring that model in first and let
+# the pusher run once, so the blueprints these relations are added to exist.
+template:
+  order: 2
+  title: Kubernetes links
+  description: >
+    Links clusters, namespaces, workloads, and ArgoCD applications to environments, services,
+    and workloads. A Deployment finds its service by the app.kubernetes.io/name label, and an
+    ArgoCD application finds its workload by name. Both are relation rules you can change. Needs
+    sw_service, sw_workload, sw_environment, and team blueprints in your model, and the Kubernetes
+    pusher's blueprints.
+
+blueprints:
+  - id: k8s_cluster
+    title: Kubernetes cluster
+    relations:
+      environment: { target: sw_environment, many: false, title: Environment, inverseTitle: Clusters, description: Set it here when the whole cluster is one environment. }
+
+  - id: k8s_namespace
+    title: Kubernetes namespace
+    relations:
+      environment: { target: sw_environment, many: false, inherit: cluster.environment, title: Environment, inverseTitle: Namespaces, description: Set it here when the cluster holds several environments. }
+
+  - id: k8s_workload
+    title: Kubernetes workload
+    relations:
+      service: { target: sw_service, many: false, title: Runs, inverseTitle: Runs on }
+      environment: { target: sw_environment, many: false, inherit: namespace.environment, title: Environment, inverseTitle: Cluster workloads }
+      team: { target: team, many: false, inherit: service.team, title: Owned by, inverseTitle: Owns cluster workloads }
+
+  - id: argocd_app
+    title: ArgoCD application
+    relations:
+      workload: { target: sw_workload, many: false, title: Deploys, inverseTitle: Deployed by }
+      environment: { target: sw_environment, many: false, inherit: namespace.environment, title: Environment, inverseTitle: ArgoCD applications }
+
+  - id: sw_service
+    title: Service
+    status: { relations: ['<-k8s_workload:service'] }
+    fields:
+      runs_on: { type: number, title: Cluster workloads, description: How many Deployments, StatefulSets, DaemonSets, and CronJobs run it., aggregation: { relation: '<-k8s_workload:service', fn: count } }
+
+  - id: sw_workload
+    title: Workload
+    status: { relations: ['<-argocd_app:workload'] }
+    fields:
+      sync_status: { type: string, chip: true, title: Sync status, mirror: '<-argocd_app:workload.sync_status' }
+      last_deployed_at: { type: datetime, title: Last deployed, aggregation: { relation: '<-argocd_app:workload', fn: max, field: last_deployed_at } }
+      deployments_30d: { type: number, title: Deployments (30d), aggregation: { relation: '<-argocd_app:workload.<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: succeeded }, window: { field: deployed_at, last: 30d } } }
+      failed_deployments_30d: { type: number, title: Failed deployments (30d), aggregation: { relation: '<-argocd_app:workload.<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: failed }, window: { field: deployed_at, last: 30d } } }
+      deployments_per_week: { type: number, title: Deployments per week, description: Successful deployments per week over the last 90 days., aggregation: { relation: '<-argocd_app:workload.<-sw_deployment:app', fn: count, where: { field: status, op: eq, value: succeeded }, window: { field: deployed_at, last: 90d }, per: week } }
+      change_failure_rate: { type: number, title: Change failure rate (%), description: The share of the last 30 days' deployments that failed., calculation: "deployments_30d + failed_deployments_30d > 0 ? round(failed_deployments_30d / (deployments_30d + failed_deployments_30d) * 100) : null" }
+
+relationRules:
+  - id: k8s_workload.service
+    blueprint: k8s_workload
+    relation: service
+    match: { target: sw_service, where: "target.key == source.labels['app.kubernetes.io/name']" }
+  - id: argocd_app.workload
+    blueprint: argocd_app
+    relation: workload
+    match: { target: sw_workload, where: "target.key == source.title" }
