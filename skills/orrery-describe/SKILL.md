@@ -7,7 +7,7 @@ description: Describe the service a repository builds to the Orrery catalog, wit
 
 A repository says what service it builds and what that service connects to
 in an `orrery.yaml`: at its root, or beside each service in a repository that
-builds several. The forge reader of each estate (redgreen)
+builds several. The forge reader of each estate ([Muster](https://github.com/orchard-suite/muster))
 reads the file with the repository, at the same commit as the code, and
 writes the service, its logo, its connectors, and the APIs it provides. The
 app itself never writes its description: an estate lists exactly the
