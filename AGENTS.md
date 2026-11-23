@@ -973,7 +973,8 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     never an entity, a key, a person, or a path. The one exception is the
     field gauge, `observeFields`, whose series are the entities of the fields
     an architect marks `metric`; it alone is also sent to Application
-    Insights. The standard's required set lives here too: how each request
+    Insights, and it alone is held to no count of series (`METER_VIEWS`):
+    the SDK folds every series past its 2,000 into one overflow series. The standard's required set lives here too: how each request
     signed in (`recordAuth`), every refusal on policy by a fixed reason
     (`recordRefusal`, hooked where `access.refused` is recorded and where
     `Hidden` and `AdminOnly` are answered), every call out by peer

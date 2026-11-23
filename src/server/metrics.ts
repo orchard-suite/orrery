@@ -9,6 +9,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { hostname } from 'node:os'
 import { monitorEventLoopDelay } from 'node:perf_hooks'
 import { metrics, type Counter, type Histogram } from '@opentelemetry/api'
+import type { ViewOptions } from '@opentelemetry/sdk-metrics'
 import type pg from 'pg'
 import { Agent, fetch as patientFetch } from 'undici'
 import type { BrowserMeasure, EventSource } from '../shared/usage.ts'
@@ -135,6 +136,13 @@ export function metricsOn(): boolean {
 export const FIELD_GAUGE = 'orrery.field.value'
 
 /**
+ * The SDK keeps 2,000 series an instrument and folds the rest into one
+ * overflow series. The field gauge has a series for every entity of a field
+ * an architect marked, so it is held to no such count.
+ */
+export const METER_VIEWS: ViewOptions[] = [{ instrumentName: FIELD_GAUGE, aggregationCardinalityLimit: Number.POSITIVE_INFINITY }]
+
+/**
  * Starts the OTLP exporter when OTEL_EXPORTER_OTLP_ENDPOINT is set, and the
  * Application Insights one, for the field gauge alone, when
  * APPLICATIONINSIGHTS_CONNECTION_STRING is. Call it before the hub is made,
@@ -163,7 +171,7 @@ export async function startMetrics(log: Logger, version: string, env: Record<str
     readers.push(new PeriodicExportingMetricReader({ exporter: new AppInsightsMetricExporter(ingestion, new Set([FIELD_GAUGE])), exportIntervalMillis: 60_000 }))
     log.info('field gauge on to application insights', { endpoint: ingestion.destination.endpoint, metric: FIELD_GAUGE })
   } else log.info('field gauge not sent to application insights', { reason: 'APPLICATIONINSIGHTS_CONNECTION_STRING not set' })
-  const provider = new MeterProvider({ resource, readers })
+  const provider = new MeterProvider({ resource, readers, views: METER_VIEWS })
   metrics.setGlobalMeterProvider(provider)
   return { flush: () => provider.forceFlush(), shutdown: () => provider.shutdown() }
 }
