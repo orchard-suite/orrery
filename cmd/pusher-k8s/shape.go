@@ -39,11 +39,14 @@ type Cluster struct {
 	CronJobs            []batchv1.CronJob
 	Services            []corev1.Service
 	Ingresses           []networkingv1.Ingress
-	Pods                []corev1.Pod
-	ReplicaSets         []appsv1.ReplicaSet
-	Jobs                []batchv1.Job
-	ArgoApps            []unstructured.Unstructured
-	NetworkPolicies     []networkingv1.NetworkPolicy
+	// Gateways and HTTPRoutes are read only where the Gateway API's CRDs exist.
+	Gateways        []unstructured.Unstructured
+	HTTPRoutes      []unstructured.Unstructured
+	Pods            []corev1.Pod
+	ReplicaSets     []appsv1.ReplicaSet
+	Jobs            []batchv1.Job
+	ArgoApps        []unstructured.Unstructured
+	NetworkPolicies []networkingv1.NetworkPolicy
 	// CiliumPolicies holds CiliumNetworkPolicy and CiliumClusterwideNetworkPolicy
 	// objects, read only where Cilium's CRDs exist.
 	CiliumPolicies []unstructured.Unstructured
@@ -62,7 +65,8 @@ type workload struct {
 	podLabels labels.Set
 }
 
-// ingressRunners are the runners every ingress health check is assigned to.
+// ingressRunners are the runners every ingress and route health check is
+// assigned to.
 // INGRESS_RUNNERS overrides it; the hub's own runner is always a valid name.
 var ingressRunners = []string{"hub"}
 
@@ -285,6 +289,8 @@ func Shape(c Cluster, log *slog.Logger) []sdk.Entity {
 			Relations: map[string]any{"namespace": clusterKey + "/" + ing.Namespace, "services": sortedKeys(targets)},
 		})
 	}
+
+	out = append(out, shapeGateways(c, clusterKey)...)
 
 	for _, a := range c.ArgoApps {
 		out = append(out, shapeArgoApp(clusterKey, a))

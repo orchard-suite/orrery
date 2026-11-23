@@ -1184,7 +1184,7 @@ client.OfferBlueprints(ctx, model.Blueprints)
 
 `cmd/runner` runs health checks from one network segment. `cmd/pusher-k8s`
 pushes a cluster (nodes, namespaces, workloads, pods, services, ingresses,
-network policies including Cilium's, volume claims with the nodes holding
+Gateway API gateways and HTTP routes, network policies including Cilium's, volume claims with the nodes holding
 their Longhorn replicas, ArgoCD applications) as one snapshot, and ArgoCD's sync history as
 `sw_deployment` entities in an incremental run; run it as a CronJob. A run
 of a job is a fact about the job, not an entity: a pod a Job owns is never
@@ -1197,7 +1197,7 @@ CronJob owns is a workload of kind `Job` with the record of its one run. A
 job's workload runs on the nodes its pods run on now, and the volumes its
 pods mount name it. Its
 blueprints are in `cmd/pusher-k8s/blueprints.yaml`. An ingress annotated
-`orrery/icon: <name>` is drawn with that icon of the hub's set, such as
+`orrery/icon: <name>`, or a gateway or HTTP route annotated so, is drawn with that icon of the hub's set, such as
 `gitlab`; an icon a person picks in the hub stays over it.
 
 `cmd/pusher-entra` pushes one Entra tenant, one snapshot per run: each

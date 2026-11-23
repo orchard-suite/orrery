@@ -148,6 +148,33 @@ blueprints:
       namespace: { target: k8s_namespace, many: false, required: true, display: contain, title: Namespace, inverseTitle: Ingresses }
       services: { target: k8s_service, many: true, title: Routes to, inverseTitle: Ingresses }
 
+  - id: k8s_gateway
+    title: Kubernetes gateway
+    group: Kubernetes
+    description: A Gateway API Gateway, the entry point its HTTP routes attach to. Says which class serves it, what it listens on, the addresses it answers at, and whether its controller has programmed it.
+    icon: globe
+    fields:
+      class: { type: string, chip: true, title: Gateway class }
+      listeners: { type: array, description: "Each listener as '<name> <hostname>:<port>/<protocol>', with * for a listener that takes every hostname." }
+      hosts: { type: array, description: The hostnames its listeners name, lowercase. }
+      addresses: { type: array, description: The addresses its controller gave it. }
+      programmed: { type: boolean, description: Whether its controller says it is programmed and serving. }
+    relations:
+      namespace: { target: k8s_namespace, many: false, required: true, display: contain, title: Namespace, inverseTitle: Gateways }
+
+  - id: k8s_http_route
+    title: Kubernetes HTTP route
+    group: Kubernetes
+    description: A Gateway API HTTPRoute with its hosts, the gateways it attaches to, and the services it routes to. It does for the Gateway API what an Ingress does. Its health is its first host that is not a wildcard answering over https.
+    icon: globe
+    fields:
+      hosts: { type: array, description: "Its own hostnames, lowercase; a route that names none answers on every hostname its gateways listen on, and takes theirs." }
+      health: { type: healthcheck, title: Health check, description: "Set by the pusher: the first host that is not a wildcard, over https, probed by the runners named in INGRESS_RUNNERS. Anything below 500 counts as answering." }
+    relations:
+      namespace: { target: k8s_namespace, many: false, required: true, display: contain, title: Namespace, inverseTitle: HTTP routes }
+      gateways: { target: k8s_gateway, many: true, title: Attaches to, inverseTitle: HTTP routes }
+      services: { target: k8s_service, many: true, title: Routes to, inverseTitle: HTTP routes }
+
   - id: argocd_app
     title: ArgoCD application
     group: Kubernetes

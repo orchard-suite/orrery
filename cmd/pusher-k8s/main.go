@@ -1,6 +1,7 @@
 // Command pusher-k8s pushes one Kubernetes cluster into an Orrery hub: the
-// cluster, nodes, namespaces, workloads, pods, services, ingresses, network
-// policies, and volume claims, as one snapshot per run. It runs in-cluster with read-only RBAC, or against a
+// cluster, nodes, namespaces, workloads, pods, services, ingresses, Gateway
+// API gateways and HTTP routes, network policies, and volume claims, as one
+// snapshot per run. It runs in-cluster with read-only RBAC, or against a
 // kubeconfig for a local look.
 //
 // A run of a job is a fact about the job, not an entity: a pod a Job owns is
@@ -28,7 +29,7 @@
 // The blueprints it writes travel with it in blueprints.yaml and are offered
 // to the hub at start, so the source must be registered for all of them.
 //
-//	INGRESS_RUNNERS comma-separated runner ids for ingress health checks (default hub)
+//	INGRESS_RUNNERS comma-separated runner ids for ingress and route health checks (default hub)
 //	INTERVAL        run forever on this interval, e.g. 2m; unset runs once and exits
 //	KUBECONFIG      used when not in a cluster
 package main
@@ -46,6 +47,7 @@ import (
 
 	"github.com/orchard-suite/orrery/v2/sdk"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -242,6 +244,18 @@ func collect(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interfa
 	} else {
 		in.ArgoApps = apps.Items
 	}
+	// The Gateway API is optional the same way.
+	for _, r := range []struct {
+		res  schema.GroupVersionResource
+		into *[]unstructured.Unstructured
+	}{{gatewaysResource, &in.Gateways}, {httpRoutesResource, &in.HTTPRoutes}} {
+		list, err := dyn.Resource(r.res).List(ctx, opts)
+		if err != nil {
+			log.Info("no Gateway API objects read", "resource", r.res.Resource, "reason", err.Error())
+			continue
+		}
+		*r.into = list.Items
+	}
 	// Cilium and Longhorn are optional the same way.
 	for _, r := range []string{"ciliumnetworkpolicies", "ciliumclusterwidenetworkpolicies"} {
 		list, err := dyn.Resource(schema.GroupVersionResource{Group: "cilium.io", Version: "v2", Resource: r}).List(ctx, opts)
@@ -257,6 +271,6 @@ func collect(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interfa
 	} else {
 		in.LonghornReplicas = replicas.Items
 	}
-	log.Info("collected", "cluster", cluster, "networkPolicies", len(in.NetworkPolicies), "ciliumPolicies", len(in.CiliumPolicies), "claims", len(in.Claims), "longhornReplicas", len(in.LonghornReplicas), "nodes", len(nodes.Items), "namespaces", len(namespaces.Items), "workloads", len(deployments.Items)+len(statefulsets.Items)+len(daemonsets.Items)+len(cronjobs.Items), "jobs", len(in.Jobs), "pods", len(in.Pods), "services", len(services.Items), "ingresses", len(ingresses.Items), "argoApps", len(in.ArgoApps))
+	log.Info("collected", "cluster", cluster, "networkPolicies", len(in.NetworkPolicies), "ciliumPolicies", len(in.CiliumPolicies), "claims", len(in.Claims), "longhornReplicas", len(in.LonghornReplicas), "nodes", len(nodes.Items), "namespaces", len(namespaces.Items), "workloads", len(deployments.Items)+len(statefulsets.Items)+len(daemonsets.Items)+len(cronjobs.Items), "jobs", len(in.Jobs), "pods", len(in.Pods), "services", len(services.Items), "ingresses", len(ingresses.Items), "gateways", len(in.Gateways), "httpRoutes", len(in.HTTPRoutes), "argoApps", len(in.ArgoApps))
 	return in, nil
 }
