@@ -156,7 +156,10 @@ export class Query {
     const offset = page.offset && !page.after ? ` OFFSET ${q.add(page.offset)}` : ''
     // Numbers go as text, so a value too precise for JSON comes back exactly.
     const values = `jsonb_build_array(${parts.map((o) => (o.numeric ? `(${o.expr})::text` : o.expr)).join(', ')}) AS order_values`
-    const listing = q.finish(`SELECT ${HEADED}, ${values} ${JOIN} WHERE ${where}${after} ORDER BY ${order}${limit}${offset}`)
+    // The page is found from the keys alone, then read whole: built for every row the question matches, the stored
+    // values (a kilobyte a row) are what the sort carries and spills to disk, and all but the page are thrown away.
+    const found = `SELECT e.blueprint, e.key, ${values}, row_number() OVER (ORDER BY ${order}) AS place ${JOIN} WHERE ${where}${after} ORDER BY ${order}${limit}${offset}`
+    const listing = q.finish(`SELECT ${HEADED}, p.order_values FROM (${found}) p JOIN entities e ON e.blueprint = p.blueprint AND e.key = p.key LEFT JOIN derived d ON d.blueprint = e.blueprint AND d.key = e.key ORDER BY p.place`)
     const listed = await this.db.query<HeadedRow & { order_values?: OrderValues }>(listing.sql, listing.values)
     const more = finite && listed.rows.length > page.limit
     const rows = more ? listed.rows.slice(0, page.limit) : listed.rows
