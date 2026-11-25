@@ -202,6 +202,14 @@ All notable changes to this project will be documented in this file. See [standa
 * hide a column on a grid with no saved layout ([bf0b005](https://github.com/orchard-suite/orrery/commit/bf0b005b3df3da0a23aeab19002eefe03cf68a9c))
 * keep blueprint fields in the order written ([4606692](https://github.com/orchard-suite/orrery/commit/460669295d0c49554ce15b4d3a42a6f1b8c648f0))
 
+## [2.1.2](https://github.com/orchard-suite/orrery/compare/v2.1.1...v2.1.2) (2026-11-25)
+
+### Bug Fixes
+
+* **orrery:** count only real connection waits ([9485519](https://github.com/orchard-suite/orrery/commit/94855196a598d27ff9811c6493413c9d5199e5d6))
+* **orrery:** log timestamp and trace ids in spans ([6b47efd](https://github.com/orchard-suite/orrery/commit/6b47efd259ba7034500829cd3229f6759eced266))
+* **orrery:** read a list page after sorting keys ([b4a6588](https://github.com/orchard-suite/orrery/commit/b4a658812db4961e2617f010c1548e9845a708f7))
+
 ## [2.1.1](https://github.com/orchard-suite/orrery/compare/v2.1.0...v2.1.1) (2026-11-23)
 
 ### Bug Fixes
