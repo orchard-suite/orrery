@@ -929,3 +929,53 @@ describe('a blueprint opened to whoever sees what it is about', () => {
     expect((await admin('/v1/blueprints/notice', put({ id: 'notice', ...notice, fields: { detail: { type: 'string', access: { grants: [], subjects: ['workstation'] } } } }))).status).toBe(400)
   })
 })
+
+describe('a list that names its fields and relations', () => {
+  /** What the page statement of `fn`'s list read of each row: the names of its stored fields and relations. */
+  const pageRead = async (fn: () => Promise<unknown>): Promise<{ fields: string[]; relations: string[] }[]> => {
+    const seen: { fields: string[]; relations: string[] }[] = []
+    const query = hub.db.query.bind(hub.db)
+    const spy = vi.spyOn(hub.db, 'query').mockImplementation(async (text: string, params?: unknown[]) => {
+      const res = await query(text, params)
+      if (text.includes('p.order_values')) for (const r of res.rows as { derived: { fields: object; relations: object } | null }[]) if (r.derived) seen.push({ fields: Object.keys(r.derived.fields).sort(), relations: Object.keys(r.derived.relations).sort() })
+      return res
+    })
+    try {
+      await fn()
+    } finally {
+      spy.mockRestore()
+    }
+    return seen
+  }
+  /** An answer's rows cut to the names asked, as the hub has always cut them. */
+  const cut = (list: EntitiesResponse['entities'], fields: string[], relations: string[]) =>
+    list.map((e) => ({ ...e, fields: Object.fromEntries(fields.filter((f) => f in e.fields).map((f) => [f, e.fields[f]])), relations: Object.fromEntries(relations.filter((r) => r in e.relations).map((r) => [r, e.relations[r]!])) }))
+  const list = async (reader: (p: string) => Promise<Response> | Response, ask = '') => (await json<EntitiesResponse>(await reader(`/v1/entities?blueprint=user${ask}`))).entities
+
+  it('reads only those of each row for a reader who sees everything, and answers as before', async () => {
+    const whole = await list(admin)
+    let named: EntitiesResponse['entities'] = []
+    const read = await pageRead(async () => {
+      named = await list(admin, '&fields=job_title&relations=team')
+    })
+    expect(read.length).toBe(3)
+    for (const r of read) {
+      expect(r.fields).toEqual(['job_title'])
+      expect(r.relations.every((n) => n === 'team')).toBe(true)
+    }
+    expect(named).toEqual(cut(whole, ['job_title'], ['team']))
+  })
+
+  it('reads a row whole for a reader a view cuts, and still withholds what they may not see', async () => {
+    const whole = await list(outsider)
+    let named: EntitiesResponse['entities'] = []
+    const read = await pageRead(async () => {
+      named = await list(outsider, '&fields=job_title,home_phone&relations=')
+    })
+    // The view reads values of its own to decide what to withhold, so the statement reads what it always did: no relation was asked, and each is read.
+    expect(read.length).toBeGreaterThan(0)
+    expect(read.every((r) => r.relations.includes('department'))).toBe(true)
+    expect(named.find((e) => e.key === 'ada@example.org')?.fields).not.toHaveProperty('home_phone')
+    expect(named).toEqual(cut(whole, ['job_title', 'home_phone'], []))
+  })
+})

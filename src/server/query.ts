@@ -15,8 +15,8 @@ import { parsePath, type Hop } from '../shared/filter.ts'
 import { isSpread, parseDuration, SHARED_LIST_MAX, type Blueprint, type EntityState, type Filter } from '../shared/model.ts'
 import type { Blueprints } from './blueprints.ts'
 import type { Db } from './db.ts'
-import type { HeadedRow } from './read.ts'
-import { HEADED, JOIN } from './read.ts'
+import type { HeadedRow, Only } from './read.ts'
+import { headedOnly, JOIN } from './read.ts'
 import type { View } from './visibility.ts'
 
 /** What a query needs of the reader's view. */
@@ -136,15 +136,15 @@ export class Query {
    * row whose order values are `after`, which reads none of the rows before
    * it. `next` is the order values of the page's last row when more follow.
    */
-  async rows(p: ListParams, view: Sight, page: { limit: number; offset: number; after?: OrderValues | null }): Promise<{ rows: HeadedRow[]; total: number; next: OrderValues | null }> {
+  async rows(p: ListParams, view: Sight, page: { limit: number; offset: number; after?: OrderValues | null; only?: Only }): Promise<{ rows: HeadedRow[]; total: number; next: OrderValues | null }> {
     const counting = new Params()
     const count = counting.finish(`SELECT count(*)::text AS n ${JOIN} WHERE ${this.where(p, view, counting)}`)
     const [listed, total] = await Promise.all([page.limit === 0 ? Promise.resolve({ rows: [], next: null }) : this.page(p, view, page), this.db.query<{ n: string }>(count.sql, count.values)])
     return { ...listed, total: Number(total.rows[0]!.n) }
   }
 
-  /** One page of the rows a question matches, in its order, without counting them all: a block of a listing that holds the count. */
-  async page(p: ListParams, view: Sight, page: { limit: number; offset: number; after?: OrderValues | null }): Promise<{ rows: HeadedRow[]; next: OrderValues | null }> {
+  /** One page of the rows a question matches, in its order, without counting them all: a block of a listing that holds the count. `only` cuts what each row carries. */
+  async page(p: ListParams, view: Sight, page: { limit: number; offset: number; after?: OrderValues | null; only?: Only }): Promise<{ rows: HeadedRow[]; next: OrderValues | null }> {
     const q = new Params()
     const where = this.where(p, view, q)
     const parts = this.orderParts(p, view, q)
@@ -159,7 +159,7 @@ export class Query {
     // The page is found from the keys alone, then read whole: built for every row the question matches, the stored
     // values (a kilobyte a row) are what the sort carries and spills to disk, and all but the page are thrown away.
     const found = `SELECT e.blueprint, e.key, ${values}, row_number() OVER (ORDER BY ${order}) AS place ${JOIN} WHERE ${where}${after} ORDER BY ${order}${limit}${offset}`
-    const listing = q.finish(`SELECT ${HEADED}, p.order_values FROM (${found}) p JOIN entities e ON e.blueprint = p.blueprint AND e.key = p.key LEFT JOIN derived d ON d.blueprint = e.blueprint AND d.key = e.key ORDER BY p.place`)
+    const listing = q.finish(`SELECT ${headedOnly(page.only, (v) => q.add(v))}, p.order_values FROM (${found}) p JOIN entities e ON e.blueprint = p.blueprint AND e.key = p.key LEFT JOIN derived d ON d.blueprint = e.blueprint AND d.key = e.key ORDER BY p.place`)
     const listed = await this.db.query<HeadedRow & { order_values?: OrderValues }>(listing.sql, listing.values)
     const more = finite && listed.rows.length > page.limit
     const rows = more ? listed.rows.slice(0, page.limit) : listed.rows

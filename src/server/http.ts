@@ -559,6 +559,10 @@ export function createApp(deps: HttpDeps): Hono<AppEnv> {
     ...(relations ? { relations: Object.fromEntries(relations.filter((r) => r in e.relations).map((r) => [r, e.relations[r]!])) } : {}),
   })
 
+  /** The fields of type `user` on one blueprint, or on every one: what the people beside a row are read from. */
+  const personFields = (blueprint: string | undefined): string[] =>
+    (blueprint ? [blueprints.get(blueprints.resolve(blueprint))] : blueprints.list()).flatMap((bp) => Object.entries(bp?.fields ?? {}).flatMap(([name, def]) => (def.type === 'user' ? [name] : [])))
+
   // Read API -----------------------------------------------------------------
 
   // An admin starts viewing as a person here, so the log says when. The web app then sends the person's address with every request.
@@ -713,7 +717,9 @@ export function createApp(deps: HttpDeps): Hono<AppEnv> {
     }
     // A list of one blueprint reads only the links it shows of each relation pointing in; one across blueprints reads them all.
     const peeked = most > 0 && q.blueprint ? { peek: { most, whole: reader.peekWhole(q.blueprint, view) } } : {}
-    const { entities: list, total, next, distribution } = await reader.list({ blueprint: q.blueprint, states, includeHidden: q.hidden === 'true', filter, limit, offset, after, sort: q.sort, ...(starredBy ? { starredBy } : {}), ...(starredOnly ? { starredOnly } : {}), incoming, ...peeked, layers: q.layers === 'true', distribution: q.distribution === 'true', view })
+    // What is asked is all that is read, beside the person fields the people a row names are drawn from; `pick` cuts those.
+    const only = fields || relations ? { fields: fields ? [...new Set([...fields, ...personFields(q.blueprint)])] : null, relations } : undefined
+    const { entities: list, total, next, distribution } = await reader.list({ blueprint: q.blueprint, states, includeHidden: q.hidden === 'true', filter, limit, offset, after, sort: q.sort, ...(starredBy ? { starredBy } : {}), ...(starredOnly ? { starredOnly } : {}), incoming, ...peeked, layers: q.layers === 'true', distribution: q.distribution === 'true', view, ...(only ? { only } : {}) })
     if (most > 0) peek(list, most, q.blueprint ? reader.wholeIncoming(q.blueprint) : new Set())
     await visibility.annotatePeople(view, list)
     await starsOn(list)

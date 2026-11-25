@@ -53,6 +53,19 @@ export interface ListOptions {
   distribution?: boolean
   /** What the reader may see. Filtering, sorting, and counting see only that, so a withheld value never decides what comes back. */
   view?: View
+  /** The fields and relations the caller names: only those are read of a page, for a reader who sees everything. */
+  only?: Only
+}
+
+/**
+ * The fields and relations a caller names, each null for all of them. A page
+ * read for it carries only those, so a list of thousands costs what is asked.
+ * It is read so only for a reader no view cuts: a view reads values of its own
+ * (a status field's reason, what an entity is about) to decide what to withhold.
+ */
+export interface Only {
+  fields: readonly string[] | null
+  relations: readonly string[] | null
 }
 
 /** A column shows its most common values one by one, and the rest together. */
@@ -231,6 +244,19 @@ const WHO_ONLY = `${HEAD}, '{}'::jsonb AS ui, '{}'::jsonb AS pushed, '{}'::jsonb
 /** An entity row's head with its derived row, as `JOINED` has it: what a stored row is hydrated from. */
 export const HEADED = `${HEAD.split(', ').map((c) => `e.${c}`).join(', ')}, CASE WHEN d.blueprint IS NULL THEN NULL ELSE jsonb_build_object('fields', d.fields, 'relations', d.relations, 'icon', d.icon, 'level', d.level, 'reasons', d.reasons, 'levels', d.levels, 'derived_at', d.derived_at) END AS derived`
 
+/** One stored map of values cut to the names `names` (a placeholder for a text array) holds: every name it does not hold is left out. */
+function subset(column: string, names: string): string {
+  return `COALESCE((SELECT jsonb_object_agg(n.k, n.v) FROM jsonb_each(${column}) AS n(k, v) WHERE n.k = ANY(${names}::text[])), '{}'::jsonb)`
+}
+
+/** `HEADED` with its stored fields and relations cut to what `only` names; `add` takes each list as a parameter. */
+export function headedOnly(only: Only | undefined, add: (value: unknown) => string): string {
+  if (!only || (only.fields === null && only.relations === null)) return HEADED
+  const fields = only.fields === null ? 'd.fields' : subset('d.fields', add(only.fields))
+  const relations = only.relations === null ? 'd.relations' : subset('d.relations', add(only.relations))
+  return `${HEAD.split(', ').map((c) => `e.${c}`).join(', ')}, CASE WHEN d.blueprint IS NULL THEN NULL ELSE jsonb_build_object('fields', ${fields}, 'relations', ${relations}, 'icon', d.icon, 'level', d.level, 'reasons', d.reasons, 'levels', d.levels, 'derived_at', d.derived_at) END AS derived`
+}
+
 /** `SELECT` of an entity row with its derived row as one JSON column, null where none is stored yet. */
 export const JOINED = `e.*, CASE WHEN d.blueprint IS NULL THEN NULL ELSE jsonb_build_object('fields', d.fields, 'relations', d.relations, 'icon', d.icon, 'level', d.level, 'reasons', d.reasons, 'levels', d.levels, 'derived_at', d.derived_at) END AS derived`
 export const JOIN = `FROM entities e LEFT JOIN derived d ON d.blueprint = e.blueprint AND d.key = e.key`
@@ -370,7 +396,7 @@ export class Reader {
     const sight = view ?? ALL
     if (blueprint) await this.ensureDerived(blueprint, this.staleBefore(blueprint))
     const params = { blueprint, states, includeHidden: !!opts.includeHidden, filter: opts.filter, sort: opts.sort, ...(opts.starredBy ? { starredBy: opts.starredBy } : {}), ...(opts.starredOnly ? { starredOnly: true } : {}) }
-    const { rows, total, next } = await this.query.rows(params, sight, { limit: opts.limit ?? 200, offset: opts.offset ?? 0, after: opts.after })
+    const { rows, total, next } = await this.query.rows(params, sight, { limit: opts.limit ?? 200, offset: opts.offset ?? 0, after: opts.after, ...(view ? {} : { only: opts.only }) })
     let page = await this.derive(rows)
     if (opts.incoming || opts.layers) page = page.map(copyOf)
     if (opts.incoming) await this.attachIncoming(page, opts.peek)
