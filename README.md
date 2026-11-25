@@ -1872,7 +1872,8 @@ which an architect turns on field by field.
 | --- | --- | --- |
 | `http.server.request.duration` | `orrery.surface`, `http.route`, `http.request.method`, `http.response.status_code`, `orrery.version` | How long each route takes to answer, under the release running, so a board compares one release with the one before |
 | `db.client.operation.duration` | `db.operation.name`, `db.collection.name`, `orrery.outcome` | Every Postgres statement, by verb and the first table it names |
-| `db.client.connection.count`, `db.client.connection.pending_requests` | `db.client.connection.state` | The pool: connections in use, idle, and queries waiting for one |
+| `db.client.connection.count`, `db.client.connection.pending_requests` | `db.client.connection.state` | The pool: connections in use and idle, and the calls waiting for one that no idle connection is about to answer. The reads the gauges make of the database as they are collected are never counted |
+| `db.client.connection.wait_time` | | How long each call waited for a pooled connection, in seconds, the gauges' own reads left out |
 | `orrery.task.duration` | `orrery.task`, `orrery.outcome` | Hub work: re-link passes, rules, inherited relations, listings, findings, commits, batch writes, git refreshes, the lifecycle tick |
 | `orrery.kept.lookups` | `orrery.kept`, `orrery.result` | Whether a grid's listing or a page's answer was already kept |
 | `orrery.queue.depth` | `orrery.queue` | Entities waiting to be derived |

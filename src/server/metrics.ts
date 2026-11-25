@@ -80,6 +80,7 @@ interface Instruments {
   shift: Histogram
   actionRuns: Counter
   actionDuration: Histogram
+  connectionWait: Histogram
 }
 
 /** The buckets of a run's time: a ping takes seconds, a reboot followed to its end takes minutes. */
@@ -118,6 +119,7 @@ function instruments(): Instruments {
     wait: meter.createHistogram('orrery.browser.wait', { unit: 's', description: "How long a person waited, by page and measure: `wait` from what they did until the answer was on screen, `ready` to the first useful screen, and the web vitals `lcp` and `inp`.", advice: { explicitBucketBoundaries: WAIT_SECONDS } }),
     actionRuns: meter.createCounter('orrery.action.runs', { description: 'Action runs that ended, by action, what asked them (alone, a batch, or a schedule), and how they ended.' }),
     actionDuration: meter.createHistogram('orrery.action.run.duration', { unit: 's', description: 'How long an action run took, started to finished, by action and what asked it.', advice: { explicitBucketBoundaries: RUN_SECONDS } }),
+    connectionWait: meter.createHistogram('db.client.connection.wait_time', { unit: 's', description: 'How long a call waited for a pooled Postgres connection, the reads the metrics make for themselves left out.', advice: { explicitBucketBoundaries: SECONDS } }),
     shift: meter.createHistogram('orrery.browser.shift', { description: 'Cumulative layout shift of a page, by page.', advice: { explicitBucketBoundaries: [0.01, 0.05, 0.1, 0.25, 0.5, 1] } }),
   }
   return made
@@ -188,15 +190,22 @@ export function observeFields(read: () => Promise<{ blueprint: string; field: st
     .createObservableGauge(FIELD_GAUGE, { description: "A field marked metric: its value on one entity, a number as it is and an enum as its value's place among the field's values." })
     .addCallback(async (r) => {
       try {
-        for (const p of await read()) r.observe(p.value, { blueprint: p.blueprint, field: p.field, key: p.key })
+        for (const p of await asCollector(read)) r.observe(p.value, { blueprint: p.blueprint, field: p.field, key: p.key })
       } catch (error) {
         log.warn('field gauge not read', { error })
       }
     })
 }
 
+/** The pool as its gauges read it: its connections, and the calls truly waiting for one (`Db.pending`). */
+export interface PoolReading {
+  pool: pg.Pool
+  pending(): number
+}
+
 /** Reports the release, the connection pool, and the Node process at each export. */
-export function observeProcess(pool: pg.Pool, version: string): void {
+export function observeProcess(db: PoolReading, version: string): void {
+  const { pool } = db
   const meter = metrics.getMeter('orrery')
   const loop = monitorEventLoopDelay({ resolution: 10 })
   loop.enable()
@@ -205,7 +214,8 @@ export function observeProcess(pool: pg.Pool, version: string): void {
     r.observe(pool.idleCount, { 'db.client.connection.state': 'idle' })
     r.observe(pool.totalCount - pool.idleCount, { 'db.client.connection.state': 'used' })
   })
-  meter.createObservableGauge('db.client.connection.pending_requests', { description: 'Queries waiting for a free Postgres connection.' }).addCallback((r) => r.observe(pool.waitingCount))
+  // Not the pool's own queue: the gauges that read the database queue there in the same collection, before this one reads it.
+  meter.createObservableGauge('db.client.connection.pending_requests', { description: 'Calls waiting for a free Postgres connection, the reads the metrics make for themselves left out.' }).addCallback((r) => r.observe(db.pending()))
   meter.createObservableGauge('nodejs.eventloop.delay.p99', { unit: 's', description: 'How late the event loop ran its timers since the last export, 99th percentile. High means the hub was busy computing.' }).addCallback((r) => {
     r.observe(loop.percentile(99) / 1e9)
   })
@@ -346,7 +356,7 @@ export function observeHub(reads: { queued(): Promise<number>; present(): Promis
   const people = meter.createObservableGauge('orrery.people', { description: 'People who made a request in the last day.' })
   meter.addBatchObservableCallback(async (r) => {
     try {
-      const present = await reads.present()
+      const present = await asCollector(() => reads.present())
       r.observe(people, present.people)
       r.observe(tabs, present.tabs)
     } catch (error) {
@@ -355,7 +365,7 @@ export function observeHub(reads: { queued(): Promise<number>; present(): Promis
   }, [people, tabs])
   meter.createObservableGauge('orrery.queue.depth', { description: 'Entities waiting to be derived.' }).addCallback(async (r) => {
     try {
-      r.observe(await reads.queued(), { 'orrery.queue': 'derive' })
+      r.observe(await asCollector(() => reads.queued()), { 'orrery.queue': 'derive' })
     } catch (error) {
       log.warn('queue depth not read', { error })
     }
@@ -370,6 +380,24 @@ export function recordKept(kind: 'listing' | 'memo', result: 'hit' | 'miss' | 's
 /** Counts activity rows Annals answered for, by its answer. */
 export function recordAnnals(outcome: string, n: number): void {
   instruments().annals.add(n, { 'orrery.outcome': outcome })
+}
+
+/** Set while a gauge reads the database for a collection: those reads are the metrics' own, and no caller waits on them. */
+const collector = new AsyncLocalStorage<true>()
+
+/** Runs one gauge's read of the database as the metrics' own. */
+function asCollector<T>(read: () => Promise<T>): Promise<T> {
+  return collector.run(true, read)
+}
+
+/** Whether what runs now is a gauge's own read for a collection. */
+export function collecting(): boolean {
+  return collector.getStore() === true
+}
+
+/** Records how long a call waited for a pooled connection. */
+export function recordConnectionWait(seconds: number): void {
+  instruments().connectionWait.record(seconds)
 }
 
 /** The work under way: the innermost task, or the route a request took where no task is. */
@@ -488,7 +516,7 @@ export function observeRunners(read: () => Promise<RunnerReading[]>, log: Logger
   meter.addBatchObservableCallback(
     async (r) => {
       try {
-        for (const x of await read()) {
+        for (const x of await asCollector(read)) {
           r.observe(queued, x.queued, { 'orrery.runner': x.runner })
           r.observe(running, x.running, { 'orrery.runner': x.runner })
           if (x.width !== null) r.observe(width, x.width, { 'orrery.runner': x.runner })

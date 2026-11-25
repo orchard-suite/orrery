@@ -6,7 +6,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import pg from 'pg'
 import type { Config } from './config.ts'
 import type { Logger } from './log.ts'
-import { currentWork } from './metrics.ts'
+import { collecting, currentWork, recordConnectionWait } from './metrics.ts'
 import { identityFromEnv, tokenSource } from './workload.ts'
 
 /** Numbered SQL files, applied once each, in order, at start. */
@@ -95,11 +95,12 @@ const WATCH_MS = 30_000
 /** How many of the oldest waits one log line names. */
 const WAITS_LOGGED = 5
 
-/** One call waiting for a pooled connection: since when, under what work, and from where. */
+/** One call waiting for a pooled connection: since when, under what work, from where, and whether a gauge asked for it as it was read. */
 interface Wait {
   since: number
   work: string | undefined
   from: Error
+  collector: boolean
 }
 
 /** A wait as a log line tells it. */
@@ -155,6 +156,17 @@ export class Db {
   }
 
   /**
+   * How many calls wait for a connection now and will not get one at once:
+   * the gauges' own reads left out, and less the idle connections the pool
+   * hands to the oldest waits on its next turn.
+   */
+  pending(): number {
+    let waiting = 0
+    for (const w of this.waits) if (!w.collector) waiting++
+    return Math.max(0, waiting - this.pool.idleCount)
+  }
+
+  /**
    * Logs the pool's queue when something in it is stuck: a call waiting
    * STUCK_MS or more, or the pool counting more waiting than this hub's
    * calls, which only a caller outside this class can be.
@@ -169,13 +181,14 @@ export class Db {
 
   /** A pooled connection, its wait recorded while it lasts and logged when it ran long. */
   private async acquire(): Promise<pg.PoolClient> {
-    const wait: Wait = { since: performance.now(), work: currentWork(), from: new Error('connection asked for') }
+    const wait: Wait = { since: performance.now(), work: currentWork(), from: new Error('connection asked for'), collector: collecting() }
     this.waits.add(wait)
     try {
       return await this.pool.connect()
     } finally {
       this.waits.delete(wait)
       const ms = performance.now() - wait.since
+      if (!wait.collector) recordConnectionWait(ms / 1000)
       if (ms >= SLOW_WAIT_MS) this.log.warn('slow connection wait', { ms: Math.round(ms), work: wait.work ?? null, from: callerOf(wait.from), idle: this.pool.idleCount, total: this.pool.totalCount })
     }
   }

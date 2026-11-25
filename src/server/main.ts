@@ -20,7 +20,7 @@ const log = createLogger('orrery')
 const telemetry = await startMetrics(log, version)
 const usage = await startTelemetry(log, version)
 const hub = await createHub(config, version)
-observeProcess(hub.db.pool, version)
+observeProcess(hub.db, version)
 const { app, git, checks } = hub
 // The other hubs on the database hear what this one changes, and it hears them.
 await hub.bridge.start()

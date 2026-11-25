@@ -6,7 +6,7 @@ import { MeterProvider, MetricReader } from '@opentelemetry/sdk-metrics'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { loadConfig } from './config.ts'
 import { createHub, type Hub } from './hub.ts'
-import { operationOf } from './metrics.ts'
+import { observeProcess, operationOf } from './metrics.ts'
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://orrery:orrery@localhost:5433/orrery'
 
@@ -29,7 +29,16 @@ beforeAll(async () => {
   // The meter is set before the hub is made, as main.ts does.
   metrics.setGlobalMeterProvider(new MeterProvider({ readers: [reader] }))
   hub = await createHub(loadConfig({ DATABASE_URL, DATA_DIR: mkdtempSync(join(tmpdir(), 'orrery-')), AUTH_MODE: 'none' }), 'test', { reset: true })
+  observeProcess(hub.db, 'test')
 })
+
+/** The calls waiting for a connection as one collection reads them, while `during` holds the pool as it likes. */
+async function pendingAt(during?: () => void): Promise<unknown> {
+  const collected = reader.collect()
+  during?.()
+  const { resourceMetrics } = await collected
+  return resourceMetrics.scopeMetrics.flatMap((s) => s.metrics).find((m) => m.descriptor.name === 'db.client.connection.pending_requests')?.dataPoints[0]?.value
+}
 
 afterAll(async () => {
   await hub.close()
@@ -149,5 +158,21 @@ describe('metrics', () => {
     expect((await points('http.server.request.duration')).every((p) => p.attributes['orrery.version'] === 'test')).toBe(true)
     // A page name the web app does not have, or a wait no page takes, is refused.
     expect((await hub.app.request('/v1/telemetry', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: 's', signals: [{ kind: 'measure', name: 'wait', page: 'x'.repeat(50), value: 1 }] }) }, { surface: 'session' })).status).toBe(400)
+  })
+
+  it('counts no wait for the reads the gauges make for themselves', async () => {
+    // Idle connections in the pool: the gauges that read the database queue for them in the collection that reads the queue.
+    await Promise.all([hub.db.query('SELECT 1'), hub.db.query('SELECT 1')])
+    expect(hub.db.pool.idleCount).toBeGreaterThan(0)
+    expect(await pendingAt()).toBe(0)
+  })
+
+  it('counts a call that waits because every connection is held', async () => {
+    const held = await Promise.all(Array.from({ length: hub.db.pool.options.max }, () => hub.db.pool.connect()))
+    const waiting = hub.db.query('SELECT 1')
+    // The held connections go back once the gauges are read, so the gauges' own reads and the waiting call finish.
+    expect(await pendingAt(() => setTimeout(() => held.forEach((c) => c.release()), 50))).toBe(1)
+    await waiting
+    expect((await points('db.client.connection.wait_time'))[0]?.count).toBeGreaterThan(0)
   })
 })
