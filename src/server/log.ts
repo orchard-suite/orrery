@@ -1,5 +1,9 @@
 // One JSON object per line on stdout. Every decision that changes an outcome
 // logs both branches, so a missing line is evidence that the path did not run.
+// A line written inside a span (a request, a background pass, a timed task)
+// carries that span's `trace_id` and `span_id`, so it is found beside its trace.
+
+import { isSpanContextValid, trace } from '@opentelemetry/api'
 
 type Level = 'debug' | 'info' | 'warn' | 'error'
 type Fields = Record<string, unknown>
@@ -18,7 +22,9 @@ export interface Logger {
 export function createLogger(component: string, bound: Fields = {}): Logger {
   const write = (level: Level, msg: string, fields?: Fields) => {
     if (LEVELS[level] < threshold) return
-    const line = { ts: new Date().toISOString(), level, component, msg, ...bound, ...fields }
+    const span = trace.getActiveSpan()?.spanContext()
+    const inside = span && isSpanContextValid(span) ? { trace_id: span.traceId, span_id: span.spanId } : {}
+    const line = { timestamp: new Date().toISOString(), level, msg, component, ...inside, ...bound, ...fields }
     process.stdout.write(JSON.stringify(line, errorReplacer) + '\n')
   }
   return {

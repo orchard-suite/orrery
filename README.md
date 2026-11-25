@@ -1380,7 +1380,7 @@ issue it a token from the Sources page, then point a pusher at
 | `DISPATCH_PUBLIC_URL` | (none) | The desk's address for people. With it, the profile menu links each person to the page where they choose how they are told |
 | `CLIENT_ADDRESS_HEADER` | `x-real-ip` | The one header the hub reads a caller's address from, for telemetry and for an action's `by.address` (docs/actions.md, Where the caller is). The ingress must write the caller's real address into it over whatever the caller sent, and strip anything a caller could forge; no other header is read. `none` trusts no header |
 | `CLIENT_ADDRESS_HOPS` | `1` | How many proxies in front of the hub add an entry to that header, for one that lists addresses such as `x-forwarded-for`: the hub reads the entry that many from its end |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | (none) | An OTLP/HTTP collector the hub sends its metrics to every 30 seconds. Unset, no metrics are kept. `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` name the hub there |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (none) | An OTLP/HTTP collector the hub sends its metrics to every 30 seconds, and its traces (see Traces and logs). Unset, no metrics or traces are kept. `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` name the hub there |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | (none) | An Application Insights resource's connection string. With it, the hub sends who uses it and how: requests, usage events, page views, and errors (see Usage telemetry). Unset, nothing is sent |
 | `FARO_URL` | (none) | A Grafana Faro receiver. With it, what a person's browser reports is relayed there as the app `orrery-web`: page views, the events the page sees, how long the person waited, the web vitals, and errors. `FARO_API_KEY` is the receiver's key; without it the hub takes each batch and drops it, counted |
 
@@ -1904,6 +1904,20 @@ what it receives.
 A statement slower than a second also writes a `slow query` warning with its
 verb, table, time, and SQL text. The SQL is the parameterised text; no value
 is ever in it.
+
+## Traces and logs
+
+Every API call runs in a server span named by its method and route pattern,
+every background pass in a root span named by its job, and every piece of
+timed hub work (the tasks of `orrery.task.duration`) in a span of its own
+inside whatever runs it. With `OTEL_EXPORTER_OTLP_ENDPOINT` set, the spans go
+to that collector; with `APPLICATIONINSIGHTS_CONNECTION_STRING` set, the
+server spans go to Application Insights as requests. With neither, they are
+made and kept nowhere.
+
+Logs are one JSON object per line on stdout: `timestamp`, `level`, `msg`,
+`component`, and the context as fields. A line written inside a span carries
+its `trace_id` and `span_id`, so a log line is found beside its trace.
 
 ## Usage telemetry
 

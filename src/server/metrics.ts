@@ -15,6 +15,7 @@ import { Agent, fetch as patientFetch } from 'undici'
 import type { BrowserMeasure, EventSource } from '../shared/usage.ts'
 import type { Logger } from './log.ts'
 import type { Surface } from './auth.ts'
+import { inSpan } from './spans.ts'
 
 /** How a request's sign-in ended: let in, refused as unknown, or a token whose person has gone. */
 export type AuthOutcome = 'ok' | 'refused' | 'revoked'
@@ -416,12 +417,12 @@ export function working<T>(name: string, fn: () => T): T {
 /** What a statement is counted under when no work was under way as it was sent, before its verb and table. */
 export const NO_WORK = 'other'
 
-/** Runs `fn` and records how long it took under `task`, failed or not. */
+/** Runs `fn` inside a span named by `task`, and records how long it took under `task`, failed or not. */
 export async function timed<T>(task: Task, fn: () => Promise<T>): Promise<T> {
   const started = performance.now()
   let outcome = 'error'
   try {
-    const out = await work.run(task, fn)
+    const out = await work.run(task, () => inSpan(task, fn))
     outcome = 'ok'
     return out
   } finally {

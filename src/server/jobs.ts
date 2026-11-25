@@ -1,4 +1,6 @@
+import { SpanStatusCode, trace } from '@opentelemetry/api'
 import type { Logger } from './log.ts'
+import { inSpan } from './spans.ts'
 
 interface Job {
   name: string
@@ -8,7 +10,7 @@ interface Job {
 
 /**
  * The hub's background passes. Each runs at start and then on its timer,
- * never two of one at once. Only the leading hub runs them (`leader.ts`),
+ * never two of one at once, each pass a root span named by its job. Only the leading hub runs them (`leader.ts`),
  * and `stop` waits for the passes still running, so the next leader starts
  * from what they wrote.
  */
@@ -56,11 +58,14 @@ export class Jobs {
   private pass(job: Job): Promise<void> {
     const running = this.running.get(job.name)
     if (running) return running
-    const pass = job
-      .run()
-      .then(() => undefined)
-      .catch((error: unknown) => this.log.error('background pass failed', { job: job.name, error }))
-      .finally(() => this.running.delete(job.name))
+    const pass = inSpan(job.name, async () => {
+      try {
+        await job.run()
+      } catch (error) {
+        this.log.error('background pass failed', { job: job.name, error })
+        trace.getActiveSpan()?.setStatus({ code: SpanStatusCode.ERROR, message: error instanceof Error ? error.message : String(error) })
+      }
+    }, { root: true }).finally(() => this.running.delete(job.name))
     this.running.set(job.name, pass)
     return pass
   }

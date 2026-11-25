@@ -1,7 +1,9 @@
-// What the hub tells Application Insights about how it is used: a request
-// span for each API call, with who made it, and the usage events named in
-// `src/shared/usage.ts`. It is on when APPLICATIONINSIGHTS_CONNECTION_STRING
-// is set and does nothing otherwise, so tests and local runs send nothing.
+// What the hub tells about how it is used: a request span for each API call,
+// with who made it, sent over OTLP when OTEL_EXPORTER_OTLP_ENDPOINT is set and
+// to Application Insights when APPLICATIONINSIGHTS_CONNECTION_STRING is, and
+// the usage events named in `src/shared/usage.ts`, to Application Insights
+// alone. Spans are made once the hub starts telemetry, kept or not, so a log
+// line carries its trace; with neither set, nothing is sent.
 // What a person's browser saw is relayed here too: to Application Insights
 // as page views, events, and exceptions; to the estate's Faro receiver, as
 // `orrery-web`, when FARO_URL is set; and into the hub's own metrics, where
@@ -35,16 +37,16 @@ export function telemetryOn(): boolean {
   return events !== null || faro !== null || metricsOn()
 }
 
-/**
- * Starts sending to Application Insights when the connection string is set.
- * Call it before the hub is made, as `startMetrics` is.
- */
 /** Sending telemetry: `flush` sends what waits now, and `shutdown` sends it and stops. */
 export interface Telemetry {
   flush(): Promise<void>
   shutdown(): Promise<void>
 }
 
+/**
+ * Starts making spans, and sends them over OTLP and to Application Insights
+ * as their settings say. Call it before the hub is made, as `startMetrics` is.
+ */
 export async function startTelemetry(log: Logger, version: string, env: Record<string, string | undefined> = process.env): Promise<Telemetry> {
   const faroUrl = env.FARO_URL?.trim()
   if (faroUrl) {
@@ -52,29 +54,39 @@ export async function startTelemetry(log: Logger, version: string, env: Record<s
     log.info('browser telemetry relayed to faro', { url: faroUrl, key: faro.key ? 'set' : 'missing: batches are dropped until it is' })
   } else log.info('browser telemetry not relayed to faro', { reason: 'FARO_URL not set' })
   const connection = env.APPLICATIONINSIGHTS_CONNECTION_STRING?.trim()
-  if (!connection) {
+  const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT ?? env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+  const [{ TracerProvider, BatchSpanProcessor }, { AsyncLocalStorageContextManager }, { detectResources, envDetector, resourceFromAttributes }] = await Promise.all([
+    import('@opentelemetry/sdk-trace'),
+    import('@opentelemetry/context-async-hooks'),
+    import('@opentelemetry/resources'),
+  ])
+  const resource = resourceFromAttributes({ 'service.name': 'orrery', 'service.version': version, 'service.instance.id': hostname() }).merge(detectResources({ detectors: [envDetector] }))
+  // Spans are made whether or not anything keeps them: every log line written inside one carries its trace id.
+  context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable())
+  const ingestion = connection ? new Ingestion(parseConnectionString(connection), log) : null
+  const spanProcessors = ingestion ? [new BatchSpanProcessor({ exporter: new AppInsightsSpanExporter(ingestion) })] : []
+  if (endpoint) {
+    const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-http')
+    spanProcessors.push(new BatchSpanProcessor({ exporter: new OTLPTraceExporter() }))
+    log.info('traces on over otlp', { endpoint, version })
+  } else log.info('traces not sent over otlp', { reason: 'OTEL_EXPORTER_OTLP_ENDPOINT not set' })
+  const traces = new TracerProvider({ resource, spanProcessors })
+  trace.setGlobalTracerProvider(traces)
+  tracer = trace.getTracer('orrery', version)
+  if (!ingestion) {
     log.info('telemetry off', { reason: 'APPLICATIONINSIGHTS_CONNECTION_STRING not set' })
     return {
-      flush: async () => undefined,
+      flush: () => traces.forceFlush(),
       shutdown: async () => {
+        await traces.shutdown()
+        tracer = null
         faro = null
       },
     }
   }
-  const [{ TracerProvider, BatchSpanProcessor }, { LoggerProvider, BatchLogRecordProcessor }, { AsyncLocalStorageContextManager }, { resourceFromAttributes }] = await Promise.all([
-    import('@opentelemetry/sdk-trace'),
-    import('@opentelemetry/sdk-logs'),
-    import('@opentelemetry/context-async-hooks'),
-    import('@opentelemetry/resources'),
-  ])
-  const ingestion = new Ingestion(parseConnectionString(connection), log)
-  const resource = resourceFromAttributes({ 'service.name': 'orrery', 'service.version': version, 'service.instance.id': hostname() })
-  context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable())
-  const traces = new TracerProvider({ resource, spanProcessors: [new BatchSpanProcessor({ exporter: new AppInsightsSpanExporter(ingestion) })] })
+  const { LoggerProvider, BatchLogRecordProcessor } = await import('@opentelemetry/sdk-logs')
   const records = new LoggerProvider({ resource, processors: [new BatchLogRecordProcessor({ exporter: new AppInsightsLogExporter(ingestion) })] })
-  trace.setGlobalTracerProvider(traces)
   logs.setGlobalLoggerProvider(records)
-  tracer = trace.getTracer('orrery', version)
   events = logs.getLogger('orrery', version)
   log.info('telemetry on', { endpoint: ingestion.destination.endpoint, version })
   return {
