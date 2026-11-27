@@ -3,6 +3,7 @@ module github.com/orchard-suite/orrery/v2
 go 1.27.4
 
 require (
+	github.com/orchard-suite/platformkit/v3 v3.3.0
 	golang.org/x/image v0.48.0
 	golang.org/x/term v0.48.0
 	gopkg.in/yaml.v3 v3.0.1

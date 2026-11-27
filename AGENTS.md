@@ -33,7 +33,12 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
   action's worked-out input reads the inputs above it), the access policy (`policy.ts`: audiences, field
   classes, and how a rule resolves through them), the ground (`ground.ts`:
   what a ground says of a blueprint's entities, worked out the same on
-  either side), and the wire types
+  either side), the change statement (`change.ts`: its check against the
+  platform kit's schema, its canonical form, and how it reads in words; the
+  schema and the worked examples in `change/` are copies of the platform
+  kit's at the version `go.mod` requires, held to it byte for byte by
+  `change/pinned_test.go`, so they move only by copying them again when that
+  requirement moves, never by hand), and the wire types
   (`api.ts`). The hub knows nothing about Azure, k8s, or offices; it
   knows blueprints, entities, relations, sources, and layers. `title` and
   `icon` are reserved fields every entity carries: they are stored and
@@ -394,6 +399,15 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     zone (`days`, asked as `group=origin`), shown where its batches would
     be shown, and opened to its firings (`components/ScheduleLine.tsx`);
     the runs and batches beside it are only what a person asked by hand.
+    A run whose action has a `change` input states a change
+    (`change-events.ts`): its digest is kept on the run, and its
+    `change.stated` and `change.routed` events are written in the
+    transaction that writes the run, each yes and no's `change.decided` with
+    the decision, and its one `change.ended` (`endChange`, guarded by
+    `change_ended_at`) wherever the run ends. Each event is the platform
+    kit's shape in the row's `detail.event`; the Annals forwarder and the
+    notice forwarder read it there and nowhere else. Never write one for a
+    run that states nothing.
     `insights.ts` reads usage from the runs alone. `approvals.ts` writes the
     hub's own approvals into the estate's approvals blueprint from the
     activity log; never write them where a run or schedule is decided. A run

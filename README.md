@@ -1759,6 +1759,14 @@ after a mark and moves the mark past rows a minute old, so an Annals that is
 down loses nothing and a row committed late is still sent; Annals keeps
 one copy of each key. `orrery.annals.events` counts the answers.
 
+A run that carries a change statement (docs/actions.md, "A change
+statement") also writes its change events, `change.stated`, `change.routed`,
+`change.decided`, and `change.ended`, and each goes to Annals as a record of
+its own under the event's key, such as `<run id>.stated`: about the change
+(`target` of kind `change`), caused by its stated event, with the
+statement's digest as `change.after_hash`, and, on the stated one, the
+things it touches as `items` and its effects as `effects`.
+
 ## Deploy
 
 Two hostnames, two ingress policies. The UI host sits behind an Entra login

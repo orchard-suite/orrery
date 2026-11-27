@@ -17,6 +17,12 @@
 // It also declares its kinds to the desk, once for each hub that forwards, so
 // each person can choose there how they hear of each.
 //
+// A run that states a change is asked with its statement in words: each
+// effect, each part nobody could name, and where it runs. When such a change
+// has run, its change.ended event is recorded on the desk as a change to each
+// thing the statement touches, through the desk's changes route, with a link
+// to the run, so an incident on one of them shows it.
+//
 // It reads the activity log the way the Annals forwarder does: a pass sends
 // every action row after a mark and moves the mark only past rows logged a
 // minute ago, so a row whose transaction commits late is still sent. A row
@@ -32,7 +38,9 @@ import type { Identity } from '../shared/model.ts'
 import type { Reader } from './read.ts'
 import type { Blueprints } from './blueprints.ts'
 import { fetchTimed } from './metrics.ts'
-import { attachedInputs } from '../shared/input-kinds.ts'
+import { attachedInputs, changeInput } from '../shared/input-kinds.ts'
+import { applierText, statementLines, type ChangeEnded, type ChangeStatement } from '../shared/change.ts'
+import { eventOfRow } from './change-events.ts'
 import { outputText } from '../shared/run-marks.ts'
 import { parseEntityId, REPORT_BLUEPRINT, type ActionRun } from '../shared/model.ts'
 import { worthTelling } from '../shared/schedule.ts'
@@ -50,7 +58,7 @@ export interface NoticesConfig {
   remindHours: number
 }
 
-const KINDS = ['action.set_requested', 'action.set_approved', 'action.set_rejected', 'action.set_withdrawn', 'action.set_finished', 'action.requested', 'action.approved', 'action.declined', 'action.returned', 'action.cancelled', 'action.finished', 'action.batched', 'action.batch_finished', 'schedule.requested', 'schedule.changed', 'schedule.approved', 'schedule.declined', 'schedule.paused', 'schedule.fired', 'report.published']
+const KINDS = ['change.ended', 'action.set_requested', 'action.set_approved', 'action.set_rejected', 'action.set_withdrawn', 'action.set_finished', 'action.requested', 'action.approved', 'action.declined', 'action.returned', 'action.cancelled', 'action.finished', 'action.batched', 'action.batch_finished', 'schedule.requested', 'schedule.changed', 'schedule.approved', 'schedule.declined', 'schedule.paused', 'schedule.fired', 'report.published']
 type Weight = 'notice' | 'notify' | 'page'
 /**
  * The kinds of event this forwarder sends, as the desk's `PUT /v1/kinds` takes
@@ -94,6 +102,12 @@ const weightOf = (kind: string): Weight => WEIGHT.get(kind) ?? 'notify'
 const TO_MAX = 20
 /** A name the desk takes as a person's address. */
 const EMAIL = /^[^\s@<>"']+@[^\s@<>"']+\.[A-Za-z]{2,}$/
+
+/** The desk's word for what kind of change ran, from the kind of artifact the statement names: a lowercase word, such as plan. */
+export function changeKind(artifact: string): string {
+  const word = artifact.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^[^a-z]+/, '').slice(0, 31)
+  return word || 'change'
+}
 
 /** A schedule's people as an event's addresses: its owner, then each person it names, once each. */
 function peopleOf(audience: { owner: string; deliver: string[] }): { person: string }[] {
@@ -197,6 +211,11 @@ export class NoticeForwarder {
       for (const row of rows.rows) {
         after = row.id
         if (this.told.has(row.id)) continue
+        if (row.kind === 'change.ended') {
+          sent += await this.recordChange(row)
+          this.told.add(row.id)
+          continue
+        }
         const event = await this.eventOf(row)
         if (event) sent += await this.send(event)
         else log.debug('action row not told: its run is gone', { change: row.id, kind: row.kind })
@@ -347,10 +366,13 @@ export class NoticeForwarder {
     const labels: Record<string, string> = { action: run.action, state: finished ?? run.state }
     if (run.entity) labels.blueprint = run.entity.blueprint
     if (run.schedule) labels.schedule = run.schedule
-    // An attachment is read on the run's page: a notice says nothing of it.
+    // An attachment is read on the run's page: a notice says nothing of it. A change statement is said in words below.
     const attached = new Set(attachedInputs(action?.inputs))
+    const stating = changeInput(action?.inputs)
+    const statement = stating ? (run.inputs[stating] as ChangeStatement | null) : null
+    if (statement) facts.push({ name: 'Change', value: statement.key }, { name: 'Runs on', value: applierText(statement.applier) })
     for (const [name, value] of Object.entries(run.inputs)) {
-      if (attached.has(name)) continue
+      if (attached.has(name) || name === stating) continue
       const shown = await this.shown(value)
       if (shown === null) continue
       facts.push({ name: action?.inputs[name]?.title ?? name, value: shown })
@@ -376,6 +398,8 @@ export class NoticeForwarder {
         { title: 'Decline', path: `${at}/decline`, style: 'destructive', done: 'declined' },
       ]
     }
+    // Whoever is asked to approve a change reads what it states, not its JSON.
+    if (kind === 'action.awaiting_approval' && statement) event.text = statementLines(statement).join('\n').slice(0, 4000)
     if (finished === 'failed' || finished === 'unknown') event.severity = 'warning'
     if (finished && run.summary) event.text = run.summary.slice(0, 4000)
     if (kind === 'action.declined' && typeof row.detail.reason === 'string' && row.detail.reason) event.text = `Why: ${row.detail.reason}`
@@ -385,6 +409,52 @@ export class NoticeForwarder {
     const to = await this.reaches(kind, row.actor, run)
     if (to.length) event.to = to
     return event
+  }
+
+  /**
+   * Records a change that ran on the desk, once for each thing its statement
+   * touches, through the desk's changes route. A change refused before it ran
+   * changed nothing, so the desk hears nothing of it. How many it kept.
+   */
+  private async recordChange(row: Row): Promise<number> {
+    const { log } = this.deps
+    const ended = eventOfRow(row.kind, row.detail) as ChangeEnded | null
+    const runId = typeof row.detail.run === 'string' ? row.detail.run : null
+    if (!ended || !runId) return 0
+    if (ended.outcome === 'refused') {
+      log.debug('change not recorded on the desk: it never ran', { change: row.id, run: runId })
+      return 0
+    }
+    const run = await this.deps.actions.getRun(runId)
+    const action = run ? this.deps.actions.get(run.action) : undefined
+    const stating = changeInput(action?.inputs)
+    const statement = run && stating ? (run.inputs[stating] as ChangeStatement | null) : null
+    if (!run || !statement) {
+      log.debug('change not recorded on the desk: its run or its statement is gone', { change: row.id, run: runId })
+      return 0
+    }
+    const things = statement.things ?? []
+    if (!things.length) log.debug('change not recorded on the desk: its statement names no thing it touches', { change: row.id, run: runId })
+    const url = `${this.config.publicUrl.replace(/\/+$/, '')}/actions/runs/${encodeURIComponent(run.id)}`
+    const said = ended.outcome === 'ok' ? 'applied' : 'failed'
+    let kept = 0
+    for (const thing of things) {
+      const change = { service: thing.key, kind: changeKind(statement.artifact.kind), title: `${action?.title ?? run.action}: change ${statement.key} ${said} on ${thing.blueprint} ${thing.key}, statement ${ended.check}`.slice(0, 300), url, by: run.by, at: ended.at }
+      const res = await this.post(`${this.config.url.replace(/\/+$/, '')}/v1/changes`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${this.config.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(change),
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (res.status === 400) {
+        log.warn('dispatch refused a change', { change: row.id, run: run.id, service: thing.key, answer: (await res.text()).slice(0, 200) })
+        continue
+      }
+      if (!res.ok) throw new Error(`dispatch answered ${res.status}: ${(await res.text()).slice(0, 200)}`)
+      kept++
+    }
+    if (kept) log.info('change recorded on the desk', { change: row.id, run: run.id, things: kept, outcome: ended.outcome, check: ended.check })
+    return kept
   }
 
   /**

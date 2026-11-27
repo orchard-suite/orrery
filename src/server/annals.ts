@@ -4,6 +4,11 @@
 // that pushers and the hub's own passes write is left out: it is the estate
 // changing, not someone acting on it.
 //
+// A run's change events (`change.stated`, `.routed`, `.decided`, `.ended`)
+// go as Annals' change records: keyed by the event's own key, caused by the
+// stated event, with the things and effects the statement names and its
+// digest as the change's hash.
+//
 // The rows are already written when a pass runs, so an Annals that is down
 // loses nothing. A pass sends every row after a mark and moves the mark only
 // past rows logged more than a minute ago, so a row whose transaction
@@ -12,6 +17,8 @@
 import type { Db } from './db.ts'
 import type { Logger } from './log.ts'
 import { fetchTimed, recordAnnals } from './metrics.ts'
+import { eventOfRow } from './change-events.ts'
+import type { ChangeEvent, ChangeStatement } from '../shared/change.ts'
 
 export interface AnnalsConfig {
   /** Annals' API port, such as http://annals-api.annals.svc:8081. */
@@ -31,6 +38,9 @@ const SETTLE_SECONDS = 60
 const MARK_KEY = 'annals.forwarded'
 /** Annals' limit on a reason or a title, in bytes. */
 const TEXT_MAX = 512
+/** Annals' limits on a label's value, and on the things one event names besides its target. */
+const LABEL_MAX = 63
+const ITEMS_MAX = 100
 
 interface Row {
   id: string
@@ -51,9 +61,17 @@ export interface AnnalsEvent {
   at: string
   source: 'orrery'
   event_key: string
-  actor: { kind: 'person' | 'system'; id: string; email?: string; on_behalf_of?: string }
+  actor: { kind: 'person' | 'agent' | 'system'; id: string; email?: string; on_behalf_of?: string }
   authority?: { approval: { required: true; by: string; at: string } }
   action: { verb: string; target: { system: 'orrery'; kind: string; id: string; title?: string }; outcome: Row['outcome']; reason?: string }
+  /** The event_key of the record that set this one off, and its source when that is another sender's. */
+  cause?: string
+  cause_source?: string
+  /** Things the event touched besides its target: a change's catalog entities. */
+  items?: { system: string; kind: string; id: string }[]
+  /** What a change was stated to do to each live thing. */
+  effects?: { kind: string; subject: { blueprint: string; key: string }; path: string; size?: number; undo: string; claim: string }[]
+  change?: { after_hash: string }
   labels: Record<string, string>
 }
 
@@ -153,6 +171,8 @@ const DECISIONS = new Set(['action.approved', 'action.declined', 'action.returne
 
 /** Annals' shape of one activity row. */
 export function toEvent(row: Row): AnnalsEvent {
+  const change = eventOfRow(row.kind, row.detail)
+  if (change) return changeRecord(change, text(row.detail.reason))
   const d = row.detail
   const action = text(d.action)
   // A product that carried a person's request is the one that acted, for them.
@@ -174,6 +194,63 @@ export function toEvent(row: Row): AnnalsEvent {
   if (row.outcome !== 'ok') event.action.reason = clip(reasonOf(row), TEXT_MAX)
   if (DECISIONS.has(row.kind) && row.actor) event.authority = { approval: { required: true, by: row.actor, at } }
   return event
+}
+
+/**
+ * Annals' shape of one change event. Each is a record of its own, about the
+ * change its stated event names: who stated it, the route the judge gave,
+ * each yes or no, and how it ended. Every event but the stated one names that
+ * event as its cause; the stated one alone carries the things and effects.
+ * `reason` is why a change that ended did not go well, as the hub said it.
+ */
+export function changeRecord(e: ChangeEvent, reason?: string): AnnalsEvent {
+  const stated = e.event === 'change.stated' ? e.key : e.of!.key
+  const event: AnnalsEvent = {
+    at: e.at,
+    source: 'orrery',
+    event_key: e.key,
+    actor: { kind: 'system', id: 'orrery' },
+    action: { verb: e.event, target: { system: 'orrery', kind: 'change', id: clip(stated, 256) }, outcome: 'ok' },
+    change: { after_hash: e.digest },
+    labels: {},
+  }
+  if (e.event !== 'change.stated') {
+    event.cause = e.of!.key
+    event.cause_source = e.of!.sender
+  }
+  switch (e.event) {
+    case 'change.stated': {
+      const s = e.statement
+      event.actor = actorOf(s.actor)
+      event.items = (s.things ?? []).slice(0, ITEMS_MAX).map((t) => ({ system: 'catalog', kind: t.blueprint, id: t.key }))
+      event.effects = (s.effects ?? []).map(effectOf)
+      event.labels = { applier: s.applier, writer: clip(s.writer.name, LABEL_MAX) }
+      break
+    }
+    case 'change.routed':
+      event.labels = { route: e.route.to, quorum: String(e.route.to === 'people' ? e.route.quorum : 0), judge: clip(e.judge.name, LABEL_MAX), pack: clip(e.judge.pack, LABEL_MAX) }
+      break
+    case 'change.decided':
+      event.actor = person(e.by.id)
+      event.labels = { answer: e.answer }
+      break
+    case 'change.ended':
+      event.action.outcome = e.outcome
+      if (e.outcome !== 'ok') event.action.reason = clip(`${reason ?? (e.outcome === 'refused' ? 'refused' : 'failed')}${e.differs?.length ? `; it differed in ${e.differs.join(', ')}` : ''}`, TEXT_MAX)
+      event.labels = { check: e.check }
+      break
+  }
+  return event
+}
+
+/** Who stated a change: a person by their address, an agent or a system by its name, with whoever it acts for. */
+function actorOf(a: ChangeStatement['actor']): AnnalsEvent['actor'] {
+  if (a.kind === 'person') return person(a.id)
+  return { kind: a.kind, id: a.id, ...(a.on_behalf_of ? { on_behalf_of: a.on_behalf_of } : {}) }
+}
+
+function effectOf(e: NonNullable<ChangeStatement['effects']>[number]): NonNullable<AnnalsEvent['effects']>[number] {
+  return { kind: e.kind, subject: { blueprint: e.subject.blueprint, key: e.subject.key }, path: e.path, ...(e.size !== undefined ? { size: e.size } : {}), undo: e.undo, claim: e.claim.from }
 }
 
 /** What a row is about: an entity, a run, or the thing its kind names. */

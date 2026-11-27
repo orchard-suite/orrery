@@ -47,7 +47,7 @@ RUN apk upgrade --no-cache && apk add --no-cache git \
       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
       /usr/local/bin/yarn /usr/local/bin/yarnpkg
 # The tests and the data only they load are not part of the hub.
-RUN find src -name '*.test.ts' -delete && rm -rf src/server/fixtures \
+RUN find src \( -name '*.test.ts' -o -name '*_test.go' \) -delete && rm -rf src/server/fixtures src/shared/change/examples \
  && mkdir -p /data && chown node:node /data
 USER node
 VOLUME /data

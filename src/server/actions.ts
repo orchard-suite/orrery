@@ -9,12 +9,14 @@ import { z } from 'zod'
 import type { GridClause, ActionReport, ActionTargetsResponse, RunActionRequest, RunnerJob, ServerEvent, StarterJob, StarterRun, ToolCaller, ToolCallRequest, ToolSummary } from '../shared/api.ts'
 import { checkAction, jobTemplate, narrowedBy, narrowValue, templateReads, unbatchable, type ActionSpec } from '../shared/action-spec.ts'
 import { isAsked, workedOut } from '../shared/asked.ts'
-import { countError, INPUT_KINDS, inputEmpty, listOf, twiceIn, withoutAttached } from '../shared/input-kinds.ts'
+import { changeInput, countError, INPUT_KINDS, inputEmpty, listOf, twiceIn, withoutAttached } from '../shared/input-kinds.ts'
+import type { ChangeGrant, ChangeStatement } from '../shared/change.ts'
 import { changes, editsList, heldList, runChanges } from '../shared/list-change.ts'
 import { ACTION_ICON, JOB_CEILING, RESERVED_PREFIX, SCHEDULE_BLUEPRINT, namesSelf, TOOL_TIERS, actionTargets, can, entityId, isFinished, narrowingInputs, parseDuration, retryWait, type BatchWidth, parseEntityId, entityIdFor, inputPicks, type Action, type ActionBackend, type Home, type ActionInputDef, type ActionRun, type ActionRunState, type HeldFor, type AccessGrant, type ActionOrigin, type ActionStats, type ActionRule, type ActionTool, type ActionView, type Entity, type EntityRef, type Filter, type Identity, type InputUnique, type Outcome, type Source, type ToolTier, type WroteBack } from '../shared/model.ts'
 import { OUTPUTS_MAX, isImageOutput, readLines, type OutputValue, type RunLine, type RunStep } from '../shared/run-marks.ts'
 import { pathsOf, render, scopeEntity, type Scope } from '../shared/template.ts'
 import { record } from './activity.ts'
+import { checkOf, decidedEvent, digestOf, endedEvent, outcomeOf, routedEvent, statedEvent } from './change-events.ts'
 import { recordActionRun, type RunnerReading } from './metrics.ts'
 import { approvalOf } from './approvals.ts'
 import type { Blueprints } from './blueprints.ts'
@@ -251,6 +253,10 @@ interface RunRow {
   images: string[] | null
   refresh: Record<string, unknown> | null
   wrote_back: WroteBack[] | null
+  /** The digest of the change statement the run carries; null for a run whose action has no change input. */
+  statement_digest: string | null
+  /** When its change.ended event was written: once, whatever ends the run. */
+  change_ended_at: Date | null
 }
 
 /** What a change to a run replaces on its row. */
@@ -329,6 +335,8 @@ export interface ActionsDeps {
   deciding: () => Promise<Identity[]>
   /** What an identity may see. */
   seenBy: (identity: Identity) => Promise<View>
+  /** The hub's own version, which names it as the judge of a change it routes itself. */
+  version: string
 }
 
 /** What judging who may decide a run reads of it: a run that waits, or one about to. */
@@ -355,6 +363,17 @@ type Judged = JudgedRun
 /** What decides the hub's change sets, as the person who ran a `decide` action on a record of one. */
 export interface SetControl {
   decide(id: string, approve: boolean, who: Identity, view: View, note?: string): Promise<void>
+}
+
+/** Where an activity row is written: the pool, or the transaction the change it records is made in. */
+type Recorder = Parameters<typeof record>[0]
+
+/** A change statement a run is asked with: the statement, its digest, and the route the hub judged. `waitsOn` is null for a run that starts at once. */
+interface Stated {
+  statement: ChangeStatement
+  digest: string
+  waitsOn: ChangeGrant[] | null
+  quorum: number
 }
 
 type Waiting = Pick<ActionRun, 'id' | 'action' | 'entity' | 'by' | 'state' | 'approvedBy' | 'approvalsNeeded' | 'requestedFor' | 'approvers' | 'heldFor' | 'tiers' | 'changeSet'>
@@ -1067,8 +1086,9 @@ export class Actions {
     // A rule that says self holds the run for its asker's own yes; a tier it asks for is granted only by someone who holds it, so that run waits for others.
     // Approvers a product named decide it instead, and never its asker.
     const held: HeldFor | null = !waits ? null : selfHeld && !tiers.length && !approvers ? 'self' : 'others'
+    const waiting: Waiting = { id: runId, action: action.id, entity: entity ? { blueprint: entity.blueprint, key: entity.key } : null, by: identity.name, state: 'awaiting', approvedBy: [], approvalsNeeded: needed(action), requestedFor, approvers, heldFor: held, tiers }
     if (waits) {
-      const decider = await this.undecided({ id: runId, action: action.id, entity: entity ? { blueprint: entity.blueprint, key: entity.key } : null, by: identity.name, state: 'awaiting', approvedBy: [], approvalsNeeded: needed(action), requestedFor, approvers, heldFor: held, tiers }, await this.deps.deciding())
+      const decider = await this.undecided(waiting, await this.deps.deciding())
       if ('why' in decider) {
         this.deps.log.warn('action run refused: nobody could approve it', { action: action.id, by: identity.name, entity: entity?.id ?? null, reason: decider.why })
         throw new ActionError(decider.why, 409)
@@ -1078,28 +1098,34 @@ export class Actions {
     const who = `${how.through ? `${identity.name} through ${how.through}` : identity.name}${requestedFor ? ` for ${requestedFor}` : ''}`
     const requested = { at: requestedAt.toISOString(), message: waits ? `requested by ${who}; waiting for approval${madeAsPerson(action) ? '; it runs as whoever approves it' : ''}` : `requested by ${who}` }
     const noted = differs.map((d) => ({ at: requestedAt.toISOString(), message: `input "${d.input}" differs from what the hub filled in for whoever asked: ${asText(d.filled)} filled in, ${asText(d.sent)} sent` }))
-    await this.deps.db.query('INSERT INTO action_runs (id, action, blueprint, key, inputs, actor, state, log, created_at, tiers, revises, approvals_needed, held_for, approvers, requested_for, by_address, current) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)', [
-      runId,
-      action.id,
-      entity?.blueprint ?? null,
-      entity?.key ?? null,
-      JSON.stringify(inputs),
-      identity.name,
-      state,
-      JSON.stringify([requested, ...noted]),
-      requestedAt,
-      JSON.stringify(tiers),
-      revises,
-      waits ? needed(action) : 1,
-      held,
-      approvers ? JSON.stringify(approvers) : null,
-      requestedFor,
-      how.address ?? null,
-      listed.length ? JSON.stringify(kept) : null,
-    ])
-    // The row says who really called, the tier a tool reached with, and what the run asked to be granted, each only when there is one.
-    const told = { ...(how.through ? { via: how.through } : {}), ...(requestedFor ? { requestedFor } : {}), ...(action.tool ? { tool: action.tool.tier } : {}), ...(tiers.length ? { tiers } : {}), ...(revises ? { revises } : {}), ...(differs.length ? { differs: differs.map((d) => d.input) } : {}), ...(listed.length ? { current: kept } : {}) }
-    await record(this.deps.db, 'action.requested', entity, null, identity.name, { action: action.id, run: runId, inputs: withoutAttached(action.inputs, inputs), state, ...told })
+    const stated = await this.statementOf(action, inputs, waits ? waiting : null)
+    // The run, the row that says it was asked, and its change events are written together: what was stated is never lost to a run that failed to be written, nor the run to its events.
+    await this.deps.db.tx(async (client) => {
+      await client.query('INSERT INTO action_runs (id, action, blueprint, key, inputs, actor, state, log, created_at, tiers, revises, approvals_needed, held_for, approvers, requested_for, by_address, current, statement_digest) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)', [
+        runId,
+        action.id,
+        entity?.blueprint ?? null,
+        entity?.key ?? null,
+        JSON.stringify(inputs),
+        identity.name,
+        state,
+        JSON.stringify([requested, ...noted]),
+        requestedAt,
+        JSON.stringify(tiers),
+        revises,
+        waits ? needed(action) : 1,
+        held,
+        approvers ? JSON.stringify(approvers) : null,
+        requestedFor,
+        how.address ?? null,
+        listed.length ? JSON.stringify(kept) : null,
+        stated?.digest ?? null,
+      ])
+      // The row says who really called, the tier a tool reached with, and what the run asked to be granted, each only when there is one.
+      const told = { ...(how.through ? { via: how.through } : {}), ...(requestedFor ? { requestedFor } : {}), ...(action.tool ? { tool: action.tool.tier } : {}), ...(tiers.length ? { tiers } : {}), ...(revises ? { revises } : {}), ...(differs.length ? { differs: differs.map((d) => d.input) } : {}), ...(listed.length ? { current: kept } : {}) }
+      await record(client, 'action.requested', entity, null, identity.name, { action: action.id, run: runId, inputs: withoutAttached(action.inputs, inputs), state, ...told })
+      if (stated) await this.recordStated(client, { id: runId, action: action.id, entity }, stated, requestedAt)
+    })
     this.deps.log.info('action requested', { action: action.id, run: runId, entity: entity?.id, by: identity.name, through: how.through ?? null, requestedFor: !!requestedFor, state, tiers, revises })
     this.deps.events.emit({ type: 'action_run', id: runId })
     // A round that revises a run still waiting supersedes it: only the newest round is ever decided.
@@ -1480,11 +1506,14 @@ export class Actions {
    */
   async putSet(client: Queryable, set: string, items: JudgedRun[], held: HeldFor, identity: Identity, through?: string): Promise<void> {
     const who = through ? `${identity.name} through ${through}` : identity.name
+    // Each run of a set waits for the set's one decision, so each that states a change is routed to the people who decide it in the set.
+    const stated: (Stated | null)[] = []
+    for (const i of items) stated.push(await this.statementOf(i.action, i.inputs, this.setWaiting(set, i, identity, held), set))
     for (const [index, i] of items.entries()) {
       const at = i.requestedAt.toISOString()
       const requested = { at, message: `requested by ${who} in change set ${set}; waiting for its approval${madeAsPerson(i.action) ? '; it runs as whoever approves it' : ''}` }
       const noted = i.differs.map((d) => ({ at, message: `input "${d.input}" differs from what the hub filled in for whoever asked: ${asText(d.filled)} filled in, ${asText(d.sent)} sent` }))
-      await client.query('INSERT INTO action_runs (id, action, blueprint, key, inputs, actor, state, log, created_at, tiers, approvals_needed, held_for, current, change_set, set_index) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)', [
+      await client.query('INSERT INTO action_runs (id, action, blueprint, key, inputs, actor, state, log, created_at, tiers, approvals_needed, held_for, current, change_set, set_index, statement_digest) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)', [
         i.runId,
         i.action.id,
         i.entity?.blueprint ?? null,
@@ -1500,9 +1529,12 @@ export class Actions {
         i.listed.length ? JSON.stringify(i.kept) : null,
         set,
         index,
+        stated[index]?.digest ?? null,
       ])
       const told = { ...(through ? { via: through } : {}), ...(i.differs.length ? { differs: i.differs.map((d) => d.input) } : {}), ...(i.listed.length ? { current: i.kept } : {}) }
       await record(client, 'action.requested', i.entity, null, identity.name, { action: i.action.id, run: i.runId, inputs: withoutAttached(i.action.inputs, i.inputs), state: 'awaiting', set, ...told })
+      const said = stated[index]
+      if (said) await this.recordStated(client, { id: i.runId, action: i.action.id, entity: i.entity }, said, i.requestedAt)
     }
   }
 
@@ -1625,6 +1657,7 @@ export class Actions {
     }
     this.deps.events.emit({ type: 'action_run', id: run.id })
     await record(this.deps.db, 'action.cancelled', run.entity, null, actor, { action: run.action, run: run.id, requestedBy: run.by, reason: why, ...(run.batch ? { batch: run.batch } : {}), ...setOf(run) })
+    await this.endChange(run, 'cancelled')
     this.deps.log.info('action run cancelled', { run: run.id, action: run.action, by: actor, reason: why })
     return true
   }
@@ -1650,6 +1683,7 @@ export class Actions {
     this.deps.events.emit({ type: 'action_run', id: run.id })
     await this.settleWriteBack(run.id, this.get(run.action), 'cancelled')
     await record(this.deps.db, 'action.cancelled', run.entity, null, actor, { action: run.action, run: run.id, requestedBy: run.by, reason: why, stopped: true, ...(run.batch ? { batch: run.batch } : {}), ...setOf(run) })
+    await this.endChange(run, 'cancelled', true)
     this.deps.log.info('action run stopped while its job ran', { run: run.id, action: run.action, by: actor, starter: run.claimedBy, reason: why })
     this.freed(run.action)
     return true
@@ -1809,6 +1843,8 @@ export class Actions {
       const enough = names.length >= (held.approvals_needed ?? 1)
       if (enough && asThem && !signedIn) return { state: 'awaiting' as const, names, enough: false, unsigned: true }
       await client.query(`UPDATE action_runs SET approved_by = $2::jsonb${enough ? `, state = 'queued', decided_by = $3, decided_at = $4, note = $5, behalf_grant = $6` : ''} WHERE id = $1`, enough ? [id, JSON.stringify(names), identity.name, at, note?.trim() || null, grant] : [id, JSON.stringify(names)])
+      // Each yes is its own change.decided event, counted in the order the yeses came, and written with the yes itself.
+      if (held.statement_digest) await this.recordDecided(client, run, held.statement_digest, at, names.length, identity.name, 'yes')
       return { state: 'awaiting' as const, names, enough }
     })
     if (voted.state !== 'awaiting') throw new ActionError(`Run "${id}" is ${voted.state}, not awaiting approval`, 409)
@@ -1865,6 +1901,10 @@ export class Actions {
     const run = await this.decidable(id, identity, view, set)
     await this.update(id, { state: 'declined', decided_by: identity.name, decidedAt: new Date(), finishedAt: new Date(), note: reason?.trim() || null }, `declined by ${identity.name}${reason?.trim() ? `: ${reason.trim()}` : ''}`)
     await record(this.deps.db, 'action.declined', run.entity, null, identity.name, { action: run.action, run: id, requestedBy: run.by, reason: reason ?? null, ...setOf(run) })
+    if (run.statementDigest) {
+      await this.recordDecided(this.deps.db, run, run.statementDigest, new Date(), (run.approvedBy ?? []).length + 1, identity.name, 'no')
+      await this.endChange(run, 'declined')
+    }
     this.deps.log.info('action run declined', { run: id, action: run.action, by: identity.name })
     return this.requireRun(id)
   }
@@ -1879,6 +1919,7 @@ export class Actions {
     const at = new Date()
     await this.update(id, { state: 'returned', decided_by: identity.name, decidedAt: at, finishedAt: at, note }, `sent back by ${identity.name}: ${note}`)
     await record(this.deps.db, 'action.returned', run.entity, null, identity.name, { action: run.action, run: id, requestedBy: run.by, note, ...setOf(run) })
+    await this.endChange(run, 'returned')
     this.deps.log.info('action run sent back', { run: id, action: run.action, by: identity.name })
     return this.requireRun(id)
   }
@@ -3198,6 +3239,7 @@ export class Actions {
     const started = (await this.getRun(run.id))?.startedAt ?? run.startedAt
     recordActionRun({ action: run.action, origin: run.schedule ? 'schedule' : run.batch ? 'batch' : 'alone', outcome: ended, seconds: started ? (Date.now() - Date.parse(started)) / 1000 : null })
     await record(this.deps.db, 'action.finished', run.entity, source, actor, { ...detail, requestedBy: run.by, backend: action?.backend.type ?? null, seconds, ...(action?.tool ? { tool: action.tool.tier } : {}), ...(run.batch ? { batch: run.batch } : {}), ...setOf(run) }, new Date(), outcome)
+    await this.endChange(run, ended as ActionRunState)
     this.freed(run.action)
   }
 
@@ -3284,6 +3326,71 @@ export class Actions {
     const done = await writeBack({ db: this.deps.db, blueprints: this.deps.blueprints, reader: this.deps.reader, sources: this.deps.sources, entities: this.deps.entities, decides: this.deps.decides, log: this.deps.log }, run, action, held)
     if (done.wrote.length) await this.deps.db.query('UPDATE action_runs SET wrote_back = $2 WHERE id = $1', [id, JSON.stringify(done.wrote)])
     await this.update(id, {}, ...done.lines)
+  }
+
+  // Change events ---------------------------------------------------------------------
+
+  /**
+   * The change statement a run is asked with, its digest, and the route the
+   * hub judges for it, or null when the action has no change input or the run
+   * was given none. `waiting` is the run as it waits, or null for one that
+   * starts at once.
+   */
+  private async statementOf(action: Action, inputs: Record<string, unknown>, waiting: Waiting | null, set?: string): Promise<Stated | null> {
+    const name = changeInput(action.inputs)
+    const statement = name ? (inputs[name] as ChangeStatement | null) : null
+    if (!statement) return null
+    const digest = digestOf(statement)
+    const waitsOn = waiting ? await this.waitsOn(waiting, set) : null
+    this.deps.log.info('action run states a change', { action: action.id, run: waiting?.id ?? null, input: name, key: statement.key, digest, route: waitsOn ? 'people' : 'no_one' })
+    return { statement, digest, waitsOn, quorum: waiting?.approvalsNeeded ?? 1 }
+  }
+
+  /**
+   * Who a run that waits waits on, as Orrery names approvers: the approvers
+   * a product named, or each person and token who may decide it now, by
+   * their address.
+   */
+  private async waitsOn(run: Waiting, set?: string): Promise<ChangeGrant[]> {
+    if (run.approvers?.length) return run.approvers
+    const names: string[] = []
+    for (const who of await this.deps.deciding()) if (!(await this.undecidable(who, await this.deps.seenBy(who), run, set))) names.push(who.name)
+    this.deps.log.debug(names.length ? 'change routed to the people who may decide its run' : 'change routed to people, and nobody may decide its run now', { run: run.id, action: run.action, deciders: names.length })
+    return [{ values: [...new Set(names)] }]
+  }
+
+  /** Writes a run's change.stated and change.routed events, with the run's own rows. */
+  private async recordStated(client: Recorder, run: { id: string; action: string; entity: EntityRef | null }, stated: Stated, at: Date): Promise<void> {
+    const ref = run.entity ? { blueprint: run.entity.blueprint, key: run.entity.key } : null
+    await record(client, 'change.stated', ref, null, null, { action: run.action, run: run.id, event: statedEvent(run.id, stated.statement, stated.digest, at) })
+    const waitsOn = stated.waitsOn && stated.waitsOn.some((g) => g.values.length) ? stated.waitsOn : null
+    if (stated.waitsOn && !waitsOn) this.deps.log.warn('change routed to people names nobody: no one may decide its run now', { run: run.id, action: run.action })
+    await record(client, 'change.routed', ref, null, null, { action: run.action, run: run.id, event: routedEvent(run, stated.digest, at, this.deps.version, stated.waitsOn ? (waitsOn ?? [{ values: [] }]) : null, stated.quorum) })
+  }
+
+  private async recordDecided(client: Recorder, run: Pick<ActionRun, 'id' | 'action' | 'entity'>, digest: string, at: Date, n: number, by: string, answer: 'yes' | 'no'): Promise<void> {
+    await record(client, 'change.decided', run.entity, null, null, { action: run.action, run: run.id, event: decidedEvent(run.id, digest, at, n, by, answer) })
+  }
+
+  /**
+   * Writes a run's change.ended event once it reaches a final state, with the
+   * applier's check read from what the run reported. It is written once,
+   * whatever ends the run: a run whose outcome was not known and is settled
+   * later keeps the event it ended with first.
+   */
+  private async endChange(run: Pick<ActionRun, 'id' | 'action' | 'entity' | 'statementDigest'>, state: ActionRunState, stopped = false): Promise<void> {
+    if (!run.statementDigest) return
+    const held = await this.deps.db.query<{ statement_digest: string; outputs: Record<string, OutputValue> }>(`UPDATE action_runs SET change_ended_at = now() WHERE id = $1 AND statement_digest IS NOT NULL AND change_ended_at IS NULL RETURNING statement_digest, outputs`, [run.id])
+    const row = held.rows[0]
+    if (!row) {
+      this.deps.log.info('change already ended: its run ended before', { run: run.id, action: run.action, state })
+      return
+    }
+    const { check, differs } = checkOf(row.outputs ?? {})
+    const { outcome, reason } = outcomeOf(state, check, stopped)
+    if (check === 'differed' && !differs.length) this.deps.log.warn('applier said the statement differed, and named no field that did', { run: run.id, action: run.action })
+    this.deps.log.info('change ended', { run: run.id, action: run.action, state, outcome, check, differs })
+    await record(this.deps.db, 'change.ended', run.entity, null, null, { action: run.action, run: run.id, state, ...(stopped ? { stopped } : {}), ...(reason ? { reason } : {}), event: endedEvent(run.id, row.statement_digest, new Date(), outcome, check, differs) }, new Date(), outcome === 'ok' ? 'ok' : 'failed')
   }
 
   /** A change the hub makes to a run itself, with the lines that say so. They are under no step. */
@@ -3403,6 +3510,7 @@ function toRun(r: RunRow): ActionRun {
     schedule: r.schedule ?? null,
     images: r.images ?? [],
     ...(r.wrote_back?.length ? { wroteBack: r.wrote_back } : {}),
+    ...(r.statement_digest ? { statementDigest: r.statement_digest } : {}),
   }
 }
 

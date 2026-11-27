@@ -1000,6 +1000,10 @@ export const CHANGE_KINDS = [
   'report.changed',
   'report.removed',
   'report.published',
+  'change.stated',
+  'change.routed',
+  'change.decided',
+  'change.ended',
 ] as const
 export type ChangeKind = (typeof CHANGE_KINDS)[number]
 
@@ -1032,6 +1036,7 @@ const CATEGORY_OF: Record<string, ActivityCategory> = {
   access: 'access',
   preview: 'access',
   action: 'actions',
+  change: 'actions',
   icon: 'model',
   picture: 'estate',
   budgets: 'sources',
@@ -1851,6 +1856,12 @@ export interface ActionRun {
   heardAt?: string | null
   /** On a run under way: whether the reader may stop it. Only a run whose job the hub can have stopped is. A hub one release back sends none. */
   canStop?: boolean
+  /**
+   * The digest of the change statement it carries, as the hub took it over the statement's canonical form when the run
+   * was asked: `sha256:` and 64 hex characters. Absent for a run whose action has no change input; a hub one release
+   * back sends none.
+   */
+  statementDigest?: string
   /** The names of the pictures it reported, each read alone at `/v1/action-runs/{id}/outputs/{name}`; `outputs` holds the rest. */
   images: string[]
   /** While a failed try waits to be tried again: when the next try is due. */

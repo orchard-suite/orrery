@@ -5,6 +5,8 @@
 // the form. Nothing here reads the model, so the model can take its list of
 // input types from it.
 
+import { readStatement, type ChangeStatement } from './change.ts'
+
 /** An option of an input's definition that only some kinds take. */
 export type InputOption = 'many' | 'values' | 'display' | 'blueprint' | 'where' | 'sort' | 'current' | 'narrows' | 'unique' | 'show'
 
@@ -58,8 +60,8 @@ export interface InputKind {
   bounds?: 'number' | 'day' | 'instant'
   /** How the builder asks for a default: as text, as a number, as a switch, or not at all. */
   defaultAs: 'text' | 'number' | 'toggle' | 'none'
-  /** How a page shows a stored value: as it reads, with its line breaks, as Markdown, as a moment in the reader's own time, as the entity it names, or folded until the reader opens it. */
-  shows: 'value' | 'lines' | 'prose' | 'instant' | 'entity' | 'attachment'
+  /** How a page shows a stored value: as it reads, with its line breaks, as Markdown, as a moment in the reader's own time, as the entity it names, folded until the reader opens it, or as the change it states. */
+  shows: 'value' | 'lines' | 'prose' | 'instant' | 'entity' | 'attachment' | 'change'
   /**
    * One value checked, its rules included: the value as it is stored, or the
    * reason it is refused. The same in the browser and in the hub. Whether an
@@ -240,6 +242,12 @@ function entityShape(value: unknown, ctx: CheckContext): Checked {
   return ok(id)
 }
 
+/** A change statement as it is stored: the object, checked against the platform kit's schema, from an object or JSON text of one. */
+const changeShape = (value: unknown): Checked => {
+  const read = readStatement(value)
+  return read.ok ? ok(read.statement) : no(read.error)
+}
+
 const KINDS = {
   string: kind({
     title: 'Short text',
@@ -284,6 +292,20 @@ const KINDS = {
     shape: attachmentShape,
     empty: blank,
     text: plain,
+  }),
+  change: kind({
+    title: 'Change statement',
+    description: 'What one change to a live thing will do, as the tool that makes it states it: checked against the change statement contract, shown to whoever approves the run, and recorded as change events.',
+    options: [],
+    rules: [],
+    defaultAs: 'none',
+    shows: 'change',
+    shape: changeShape,
+    empty: blank,
+    text: (value) => {
+      const s = value as Partial<ChangeStatement> | null
+      return s && typeof s === 'object' && typeof s.key === 'string' ? `change ${s.key}` : plain(value)
+    },
   }),
   number: kind({
     title: 'Number',
@@ -431,6 +453,11 @@ export function withoutAttached(defs: Record<string, { type: InputKindName }> | 
     if (typeof value === 'string') out[name] = `attached: ${value.length} characters`
   }
   return out
+}
+
+/** The one input that carries a change statement, by name, or null: an action declares at most one. */
+export function changeInput(inputs: Record<string, { type: InputKindName }> | undefined): string | null {
+  return Object.entries(inputs ?? {}).find(([, def]) => INPUT_KINDS[def.type]?.shows === 'change')?.[0] ?? null
 }
 
 /**

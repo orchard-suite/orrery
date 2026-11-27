@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { ActionBatchSummary, ActionRunsResponse, ActionsResponse, ScheduleDay, WhoAmIResponse } from '../../shared/api.ts'
 import type { ActionRun, ActionView } from '../../shared/model.ts'
+import type { ChangeStatement } from '../../shared/change.ts'
 import { keys } from '../api.ts'
 import { ActionRunPage, RunsPanel } from './ActionRun.tsx'
 
@@ -185,6 +186,33 @@ describe("a run's page", () => {
     expect(given('Why')).toContain('Not given')
     // An input the action no longer asks is still shown, under its name.
     expect(given('old')).toContain('>kept<')
+  })
+
+  it('shows the change a run states in place of its JSON, above the decision it asks for', () => {
+    const statement: ChangeStatement = {
+      key: 'plan-7f3a2c',
+      writer: { name: 'infra', version: '3.1.0' },
+      actor: { kind: 'agent', id: 'agent-1', on_behalf_of: 'user@example.com' },
+      things: [{ blueprint: 'workload', key: 'acme-api-prod' }],
+      artifact: { kind: 'plan', digest: `sha256:${'9'.repeat(64)}` },
+      applier: 'hub',
+      effects: [{ kind: 'stops', subject: { blueprint: 'workload', key: 'acme-api-prod' }, path: 'in-place', size: 2, undo: 'no', claim: { from: 'writer', rule: 'app-settings-restart' } }],
+      unknown: [{ part: 'site_config.cors', why: 'unread' }],
+    }
+    const inputs: ActionView['inputs'] = { plan: { type: 'change', title: 'The change' }, env: { type: 'string', title: 'Environment' } }
+    const html = page(mine('r1', { state: 'awaiting', inputs: { plan: statement, env: 'prod' }, statementDigest: `sha256:${'6'.repeat(64)}` }), inputs)
+    expect(html).toContain('What you are asked to approve')
+    expect(html).toContain('a job the hub starts')
+    expect(html).toContain('agent agent-1, for user@example.com')
+    expect(html).toMatch(/<td[^>]*>stops<\/td><td[^>]*>workload acme-api-prod<\/td><td[^>]*>in-place<\/td><td[^>]*>2<\/td><td[^>]*>No<\/td>/)
+    expect(html).toContain('app-settings-restart')
+    expect(html).toContain('site_config.cors')
+    expect(html).toContain('which the writer could not read')
+    expect(html).toContain(`sha256:${'6'.repeat(64)}`)
+    expect(html).not.toContain('&quot;applier&quot;')
+    // The other inputs are listed as ever, and the statement is not one of them.
+    expect(html).toMatch(/<dt[^>]*>Environment<\/dt>/)
+    expect(html).not.toMatch(/<dt[^>]*>The change<\/dt>/)
   })
 
   it('leaves out an input the form did not ask for that run, and shows a worked-out value like any other', () => {

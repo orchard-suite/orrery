@@ -750,6 +750,8 @@ const CONTROLS: Record<ActionInputType, (ask: Ask) => ReactNode> = {
   text: (a) => <textarea {...attrs(a)} className={`${input} min-h-28 w-full`} value={textOf(a.value)} onChange={(e) => a.onChange(e.target.value || undefined)} />,
   markdown: (a) => <textarea {...attrs(a)} className={`${input} min-h-28 w-full font-mono text-[12px]`} value={textOf(a.value)} onChange={(e) => a.onChange(e.target.value || undefined)} />,
   attachment: (a) => <textarea {...attrs(a)} className={`${input} min-h-28 w-full font-mono text-[12px]`} spellCheck={false} value={textOf(a.value)} onChange={(e) => a.onChange(e.target.value || undefined)} />,
+  // A statement a run was asked with before comes back as the object the hub keeps: it is shown as the JSON it was.
+  change: (a) => <textarea {...attrs(a)} className={`${input} min-h-28 w-full font-mono text-[12px]`} spellCheck={false} value={a.value !== null && typeof a.value === 'object' ? JSON.stringify(a.value, null, 2) : textOf(a.value)} onChange={(e) => a.onChange(e.target.value || undefined)} />,
   number: (a) => (
     <input
       {...attrs(a)}

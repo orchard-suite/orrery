@@ -68,6 +68,7 @@ page shows and what an agent reads to decide when to run the action.
 | `text` | a text area for several lines of plain text | the text, with its line breaks | | `pattern`, `minLength`, `maxLength` |
 | `markdown` | a text area; the run's page shows it formatted, above everything else | the text | `narrows` | `minLength`, `maxLength` |
 | `attachment` | a text area in a fixed-width font; the run's page shows it folded under its title, to open, copy, or download | the text exactly as sent, at most 1,000,000 characters | | `maxLength` |
+| `change` | a text area for a change statement as JSON; the run's page shows the change it states, above the decision | the statement, checked against the change statement contract | | |
 | `number` | a number box | the number | `many`, `narrows`, `unique`, `current` | `min`, `max` |
 | `boolean` | a checkbox | true or false | `narrows` | |
 | `date` | a calendar | the day, as `YYYY-MM-DD` | `narrows` | `min`, `max` |
@@ -213,6 +214,68 @@ such as the full plan of an infrastructure apply. The run's page keeps it
 folded under its title until the reader opens it, and offers it to copy or
 download either way. Only the run keeps it: a list of runs, the activity log,
 and a notice say only how long it is.
+
+### A change statement
+
+A `change` input is for a tool that changes a live thing, such as an
+infrastructure apply: it sends what the change will do as a **change
+statement**, the platform kit's contract (`change/schema/statement.json` in
+`github.com/orchard-suite/platformkit`). An action declares at most one, and
+never as a list, worked out, or in a batch:
+
+```yaml
+inputs:
+  plan:
+    type: change
+    title: The change
+    required: true
+```
+
+The tool sends the statement as an object, or as JSON text of one:
+
+```json
+{ "inputs": { "plan": { "key": "plan-7f3a2c", "writer": { "name": "infra", "version": "3.1.0" }, "actor": { "kind": "agent", "id": "agent-1", "on_behalf_of": "user@example.com" }, "things": [{ "blueprint": "workload", "key": "acme-api-prod" }], "artifact": { "kind": "plan", "digest": "sha256:9f2c…" }, "applier": "hub", "effects": [{ "kind": "stops", "subject": { "blueprint": "workload", "key": "acme-api-prod" }, "path": "in-place", "size": 2, "undo": "yes", "claim": { "from": "writer" } }] } } }
+```
+
+The hub checks it against the contract's schema as the run is asked and
+refuses one that breaks it, naming the input and the part. The schema it
+checks with is a copy in `src/shared/change/`, of the platform kit version
+`go.mod` requires; a Go test holds the copy to that version byte for byte.
+The run keeps the statement and its digest (`statementDigest`): `sha256:`
+over its canonical form, as the contract takes it.
+
+Whoever decides the run reads the change, not its JSON: the run's page shows
+where it runs (a job the hub starts, or the machine that asked), who asked,
+the artifact, the things it touches, each effect with the thing it is on,
+its path, its size, whether it can be undone, and where the claim came from,
+and each part the writer could not name an effect for. A notice of a run
+that waits says the same in words.
+
+A run that carries a statement writes four kinds of change event, each in
+the contract's shape, in the activity row of the change that made it:
+
+| Event | When | What it says |
+| --- | --- | --- |
+| `change.stated` | the run is asked | the statement and its digest |
+| `change.routed` | right after | the route: to people, the people who may decide the run now and its quorum, when it waits for approval; to no one when it does not. The hub is the judge (`orrery`, its version, the pack `action.<action id>`, the rule `action-approval`) |
+| `change.decided` | each approve and decline | who, and yes or no |
+| `change.ended` | the run reaches a final state, once | `ok`, `failed`, or `refused`, and the applier's check |
+
+Each event's key is the run's: `<run id>.stated`, `.routed`, `.decided.<n>`
+(the nth answer), and `.ended`, and each after the first names the stated
+one. The check comes from what the applier reports as outputs:
+`statement_check` is `matched`, `differed`, or `unchecked` (unchecked when it
+reports none), and `statement_differs` names the statement's fields that
+differed, comma-separated. A statement that differed was refused by its
+applier and ends `refused`. A run that is declined, sent back, or cancelled
+before it ran ends `refused`; one stopped while it ran, or whose outcome is
+not known, ends `failed`.
+
+The Annals forwarder sends each event as a record of its own (README,
+Access), and a change that ran (`ok` or `failed`) is recorded on the dispatch
+desk as a change to each thing the statement touches (Telling people about
+runs, below). A run whose action has no `change` input writes none of this;
+a statement sent to one is dropped like any input the action does not ask.
 
 ### Rules
 
@@ -2139,6 +2202,15 @@ Each event carries:
   buttons. Whoever clicks one signs in as themselves and calls the hub with
   their own token (`AUTH_API_SCOPE` in the README), so the hub decides
   exactly as on the run's page: someone who may not decide it is refused.
+
+A run that states a change (A change statement, above) is asked with the
+statement in words: the event's text says each effect and each part nobody
+could name, and its facts say the change's key and where it runs. Once such a
+change has run, `ok` or `failed`, its end is recorded on the desk through its
+changes route (`POST /v1/changes`), once for each thing the statement
+touches: the thing's key as the service, the artifact's kind as the kind,
+and a link to the run, so an incident on that thing shows it. A change
+refused before it ran changed nothing, and the desk hears nothing of it.
 
 A pass reads the activity log the way the Annals forwarder does, keyed
 `change:<id>`, so a desk that is down loses nothing and a row sent twice is

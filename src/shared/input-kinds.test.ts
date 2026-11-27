@@ -10,7 +10,7 @@ const no = (error: string) => ({ ok: false, error })
 describe('the registry', () => {
   it('is where the input types come from', () => {
     expect([...ACTION_INPUT_TYPES]).toEqual(Object.keys(INPUT_KINDS))
-    expect(ACTION_INPUT_TYPES).toEqual(['string', 'text', 'markdown', 'attachment', 'number', 'boolean', 'date', 'datetime', 'email', 'url', 'enum', 'entity', 'person'])
+    expect(ACTION_INPUT_TYPES).toEqual(['string', 'text', 'markdown', 'attachment', 'change', 'number', 'boolean', 'date', 'datetime', 'email', 'url', 'enum', 'entity', 'person'])
   })
 
   it('says what every kind is, for the builder', () => {

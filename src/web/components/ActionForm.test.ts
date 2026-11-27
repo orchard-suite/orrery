@@ -60,6 +60,7 @@ describe('the control each kind of input is asked with', () => {
     notes: { type: 'text', title: 'Notes' },
     plan: { type: 'markdown', title: 'Plan' },
     whole: { type: 'attachment', title: 'Whole plan' },
+    stated: { type: 'change', title: 'The change' },
     count: { type: 'number', title: 'Count', min: 1, max: 5 },
     notify: { type: 'boolean', title: 'Notify' },
     due: { type: 'date', title: 'Due', min: '2026-01-01', max: '2026-12-31' },
@@ -72,12 +73,13 @@ describe('the control each kind of input is asked with', () => {
   })
 
   it('draws every kind the registry names', () => {
-    for (const type of ACTION_INPUT_TYPES) expect(Object.values({ name: 'string', notes: 'text', plan: 'markdown', whole: 'attachment', count: 'number', notify: 'boolean', due: 'date', at: 'datetime', mail: 'email', link: 'url', size: 'enum', lead: 'person', target: 'entity' }), type).toContain(type)
+    for (const type of ACTION_INPUT_TYPES) expect(Object.values({ name: 'string', notes: 'text', plan: 'markdown', whole: 'attachment', stated: 'change', count: 'number', notify: 'boolean', due: 'date', at: 'datetime', mail: 'email', link: 'url', size: 'enum', lead: 'person', target: 'entity' }), type).toContain(type)
     expect(question(html, 'Name')).toContain('type="text"')
     expect(question(html, 'Notes')).toMatch(/<textarea[^>]*class="[^"]*min-h-28/)
     expect(question(html, 'Notes')).not.toContain('font-mono')
     expect(question(html, 'Plan')).toMatch(/<textarea[^>]*font-mono/)
     expect(question(html, 'Whole plan')).toMatch(/<textarea[^>]*font-mono/)
+    expect(question(html, 'The change')).toMatch(/<textarea[^>]*font-mono/)
     expect(question(html, 'Count')).toMatch(/type="number"[^>]*min="1"[^>]*max="5"/)
     expect(question(html, 'Notify')).toContain('type="checkbox"')
     expect(question(html, 'Due')).toMatch(/type="date"[^>]*min="2026-01-01"[^>]*max="2026-12-31"/)

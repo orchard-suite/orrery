@@ -91,6 +91,11 @@ export const CHANGE_EVENTS: Record<ChangeKind, string | null> = {
   'report.changed': 'Report Changed',
   'report.removed': 'Report Removed',
   'report.published': 'Report Published',
+  // A run's change events say again what its own rows say: the run is what tells how the hub is used.
+  'change.stated': null,
+  'change.routed': null,
+  'change.decided': null,
+  'change.ended': null,
   'welcome.changed': 'Welcome Tour Changed',
 }
 

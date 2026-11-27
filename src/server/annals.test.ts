@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -6,7 +6,9 @@ import { categoryOf } from '../shared/model.ts'
 import { actingAs, record } from './activity.ts'
 import { loadConfig } from './config.ts'
 import { createHub, type Hub } from './hub.ts'
-import { clip, AnnalsForwarder, toEvent, type AnnalsEvent } from './annals.ts'
+import { changeRecord, clip, AnnalsForwarder, toEvent, type AnnalsEvent } from './annals.ts'
+import { decidedEvent, endedEvent, routedEvent, statedEvent } from './change-events.ts'
+import type { ChangeStatement } from '../shared/change.ts'
 import { createLogger } from './log.ts'
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://orrery:orrery@localhost:5433/orrery'
@@ -168,5 +170,53 @@ describe('clip', () => {
     const long = clip('é'.repeat(400), 512)
     expect(new TextEncoder().encode(long).length).toBeLessThanOrEqual(512)
     expect(long).toBe('é'.repeat(256))
+  })
+})
+
+describe('change records', () => {
+  const statement = (JSON.parse(readFileSync(join(import.meta.dirname, '..', 'shared', 'change', 'examples', 'event-stated.json'), 'utf8')) as { statement: ChangeStatement }).statement
+  const digest = 'sha256:631648276c5b93648131ddef01fe2882376e690c04284e39cb0a66c048381181'
+  const at = new Date('2026-11-26T20:01:04Z')
+  const target = { system: 'orrery', kind: 'change', id: 'r1.stated' }
+
+  it('send a stated change with its actor, things, effects, and digest', () => {
+    const e = changeRecord(statedEvent('r1', statement, digest, at))
+    expect(e).toEqual({
+      at: '2026-11-26T20:01:04.000Z',
+      source: 'orrery',
+      event_key: 'r1.stated',
+      actor: { kind: 'agent', id: 'agent-1', on_behalf_of: 'user@example.com' },
+      action: { verb: 'change.stated', target, outcome: 'ok' },
+      items: [{ system: 'catalog', kind: 'workload', id: 'acme-api-prod' }],
+      effects: [
+        { kind: 'stops', subject: { blueprint: 'workload', key: 'acme-api-prod' }, path: 'in-place', size: 2, undo: 'yes', claim: 'writer' },
+        { kind: 'grants', subject: { blueprint: 'workload', key: 'acme-api-prod' }, path: 'in-place', size: 1, undo: 'yes', claim: 'writer' },
+      ],
+      change: { after_hash: digest },
+      labels: { applier: 'hub', writer: 'infra' },
+    })
+    expect(e.cause).toBeUndefined()
+  })
+
+  it('send the route, each answer, and the end as caused by the stated change', () => {
+    const routed = changeRecord(routedEvent({ id: 'r1', action: 'apply' }, digest, at, '2.2.0', [{ values: ['user@example.com'] }], 1))
+    expect(routed).toMatchObject({ event_key: 'r1.routed', actor: { kind: 'system', id: 'orrery' }, action: { verb: 'change.routed', target, outcome: 'ok' }, cause: 'r1.stated', cause_source: 'orrery', change: { after_hash: digest }, labels: { route: 'people', quorum: '1', judge: 'orrery', pack: 'action.apply' } })
+    expect(changeRecord(routedEvent({ id: 'r1', action: 'apply' }, digest, at, '2.2.0', null, 1)).labels).toEqual({ route: 'no_one', quorum: '0', judge: 'orrery', pack: 'action.apply' })
+    const decided = changeRecord(decidedEvent('r1', digest, at, 2, 'user@example.com', 'no'))
+    expect(decided).toMatchObject({ event_key: 'r1.decided.2', actor: { kind: 'person', id: 'user@example.com', email: 'user@example.com' }, action: { verb: 'change.decided', target, outcome: 'ok' }, cause: 'r1.stated', labels: { answer: 'no' } })
+    expect(decided.items).toBeUndefined()
+    const ended = changeRecord(endedEvent('r1', digest, at, 'ok', 'matched', []))
+    expect(ended).toMatchObject({ event_key: 'r1.ended', actor: { kind: 'system', id: 'orrery' }, action: { verb: 'change.ended', target, outcome: 'ok' }, cause: 'r1.stated', labels: { check: 'matched' } })
+    expect(ended.action.reason).toBeUndefined()
+    const refused = changeRecord(endedEvent('r1', digest, at, 'refused', 'differed', ['artifact', 'effects']), 'the applier refused it')
+    expect(refused.action).toEqual({ verb: 'change.ended', target, outcome: 'refused', reason: 'the applier refused it; it differed in artifact, effects' })
+    expect(refused.labels).toEqual({ check: 'differed' })
+  })
+
+  it('are read from the activity rows that carry them', () => {
+    const event = endedEvent('r1', digest, at, 'failed', 'unchecked', [])
+    const e = toEvent({ id: '7', at, kind: 'change.ended', category: categoryOf('change.ended'), outcome: 'failed', blueprint: null, key: null, source: null, actor: null, actor_kind: 'hub', detail: { action: 'apply', run: 'r1', reason: 'the run failed', event } })
+    expect(categoryOf('change.ended')).toBe('actions')
+    expect(e).toMatchObject({ event_key: 'r1.ended', action: { outcome: 'failed', reason: 'the run failed' } })
   })
 })

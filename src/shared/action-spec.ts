@@ -191,6 +191,9 @@ export function checkAction(input: unknown, blueprints?: Pick<Blueprint, 'id' | 
     if (spec.batch) issues.push({ path: ['batch'], message: 'batch: a self action runs on one entity, the caller\'s own, so it is never asked for many' })
   }
   const declared = Object.keys(spec.inputs)
+  // A run states at most one change: the change events and the approval read one statement.
+  const stating = declared.filter((name) => INPUT_KINDS[spec.inputs[name]!.type]?.shows === 'change')
+  for (const name of stating.slice(1)) issues.push({ path: ['inputs', name, 'type'], message: `input "${name}": an action declares at most one change input, and "${stating[0]}" is one` })
   /** What is wrong with an input that a `when` or a `value` of `name` reads, or null: it reads the inputs declared above it. */
   const misread = (name: string, what: 'when' | 'value', read: string): string | null => {
     if (read === name) return `${what} reads the input itself`
@@ -221,6 +224,7 @@ export function checkAction(input: unknown, blueprints?: Pick<Blueprint, 'id' | 
     if (def.value !== undefined) {
       if (def.narrows) issues.push({ path: at('value'), message: `input "${name}": an input that narrows the target is filled from it, never worked out` })
       else if (kind.picks) issues.push({ path: at('value'), message: `input "${name}": ${aKind(def.type)} is picked, never worked out` })
+      else if (kind.shows === 'change') issues.push({ path: at('value'), message: `input "${name}": a change statement is the writer's own, never worked out` })
       else {
         if (def.default !== undefined) issues.push({ path: at('default'), message: `input "${name}": a worked-out input is never asked, so it has no default` })
         if (def.required) issues.push({ path: at('required'), message: `input "${name}": a worked-out input is never asked, so it is never required: a rule on it refuses what it works out` })
@@ -573,6 +577,10 @@ export function unbatchable(inputs: Record<string, ActionInputDef>): Map<string,
   const out = new Map<string, string>()
   for (const [name, { when, value, ...def }] of Object.entries(inputs)) {
     if (def.narrows) continue
+    if (INPUT_KINDS[def.type]?.shows === 'change') {
+      out.set(name, 'states one change, to the things it names')
+      continue
+    }
     if (editsList(def)) {
       out.set(name, 'changes a list each entity holds for itself')
       continue

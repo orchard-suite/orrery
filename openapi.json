@@ -4259,7 +4259,7 @@
     },
     "/v1/action-runs/{id}": {
       "get": {
-        "summary": "One run with its state, its log (each line {at, message, step?}), the steps its backend named ({name, at}), the outputs it ended with, its link, heardAt (when the hub last heard from it while it ran), canStop (on a job's run under way, whether the caller may stop it), and wroteBack: [{field, was, now}], what it wrote back on its entity once it succeeded, only fields the caller may see. A run is read at any time, by whoever may see it: nothing has to stay connected for it to go on. A job's own container reads its run here with the credential made for that run (orr_run_), which opens no other read",
+        "summary": "One run with its state, its log (each line {at, message, step?}), the steps its backend named ({name, at}), the outputs it ended with, its link, heardAt (when the hub last heard from it while it ran), canStop (on a job's run under way, whether the caller may stop it), wroteBack: [{field, was, now}], what it wrote back on its entity once it succeeded, only fields the caller may see, and statementDigest, the digest of the change statement a run of an action with a change input carries. A run is read at any time, by whoever may see it: nothing has to stay connected for it to go on. A job's own container reads its run here with the credential made for that run (orr_run_), which opens no other read",
         "security": [
           {
             "bearerAuth": []

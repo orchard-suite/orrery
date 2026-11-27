@@ -4,7 +4,9 @@
 
 import { Check, ChevronRight, CircleDot, Circle, CircleHelp, Hourglass, Minus, RotateCcw, Undo2, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { kindOf } from '../../shared/input-kinds.ts'
+import { changeInput, kindOf } from '../../shared/input-kinds.ts'
+import type { ChangeStatement } from '../../shared/change.ts'
+import { ChangeStatementView } from './ChangeStatement.tsx'
 import { runChanges } from '../../shared/list-change.ts'
 import { entityId, isFinished, type Action, type ActionInputDef, type ActionRun, type ActionRunState } from '../../shared/model.ts'
 import { happened, iconOf, inputShown, named, outputsOf, ranInputs, targetOf, waits, wroteBackOf } from '../actions.ts'
@@ -118,7 +120,10 @@ export function ActionRunPage({ id }: { id: string }) {
   const attached = given.filter(([k, v]) => isAttached(k, v)) as [string, string][]
   // What the run does to each list it edits, against the list kept when it was asked: shown on its own, so whoever approves reads the change itself.
   const changed = Object.entries(runChanges(action?.inputs, r.inputs, r.current))
-  const plain = given.filter(([k, v]) => !isProse(k, v) && !isAttached(k, v) && !changed.some(([n]) => n === k))
+  // The change the run states is read whole, above the decision it asks for.
+  const stating = changeInput(action?.inputs)
+  const statement = stating && r.inputs[stating] && typeof r.inputs[stating] === 'object' ? (r.inputs[stating] as ChangeStatement) : null
+  const plain = given.filter(([k, v]) => !isProse(k, v) && !isAttached(k, v) && !changed.some(([n]) => n === k) && !(statement && k === stating))
   const outputs = outputsOf(r)
   const wroteBack = wroteBackOf(r)
   const told = toldOf(r.id)
@@ -214,6 +219,7 @@ export function ActionRunPage({ id }: { id: string }) {
           </div>
         </Panel>
       )}
+      {statement && <ChangeStatementView statement={statement} digest={r.statementDigest} waiting={r.state === 'awaiting'} />}
       {r.decidedBy && (r.state === 'returned' || r.note) && <DecisionNote run={r} />}
       {r.state === 'awaiting' && !r.changeSet && <Decide run={r} />}
       {r.state === 'queued' && !r.changeSet && <Withdraw run={r} />}
@@ -243,7 +249,7 @@ export function ActionRunPage({ id }: { id: string }) {
             </h2>
             <Timeline run={r} action={action} now={now} />
           </Panel>
-          {(plain.length > 0 || prose.length + attached.length + changed.length === 0) && (
+          {(plain.length > 0 || prose.length + attached.length + changed.length + (statement ? 1 : 0) === 0) && (
             <Panel>
               <h2 className="border-b border-ink-800 px-4 py-2">
                 <Kicker>Inputs</Kicker>
