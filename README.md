@@ -1757,7 +1757,12 @@ sources, secrets, access, and actions, whoever made it. What pushers and the
 hub's own passes write about the estate stays here. A pass sends every row
 after a mark and moves the mark past rows a minute old, so an Annals that is
 down loses nothing and a row committed late is still sent; Annals keeps
-one copy of each key. `orrery.annals.events` counts the answers.
+one copy of each key. One row Annals cannot take never holds up the rest:
+an event it refuses is logged and passed over, and a batch it refuses whole
+(a body it cannot read, or one too large) is sent again in halves until the
+row it cannot take is alone, and only that row is passed over. An event
+Annals took and could not store is sent again on the next pass.
+`orrery.annals.events` counts the answers.
 
 A run that carries a change statement (docs/actions.md, "A change
 statement") also writes its change events, `change.stated`, `change.routed`,

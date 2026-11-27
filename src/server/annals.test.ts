@@ -17,13 +17,18 @@ let hub: Hub
 let posts: AnnalsEvent[][] = []
 let answer: number
 let refuse = new Set<string>()
+/** Verbs whose event Annals cannot read at all, as one with a field it does not know: a batch holding one is refused whole. */
+let unreadable = new Set<string>()
+/** Verbs whose event Annals takes and then fails to store. */
+let unstored = new Set<string>()
 
-/** A stand-in Annals: it keeps what it is sent and answers each event with a receipt. */
+/** A stand-in Annals: it keeps what it is sent and answers each event with a receipt, or refuses a batch it cannot read. */
 const annalsFetch: typeof fetch = async (_url, init) => {
   if (answer !== 200) return new Response('down', { status: answer })
   const events = JSON.parse(String(init?.body)) as AnnalsEvent[]
+  if (events.some((e) => unreadable.has(e.action.verb))) return Response.json({ reason: 'bad_json' }, { status: 400 })
   posts.push(events)
-  return Response.json({ results: events.map((e, index) => (refuse.has(e.action.verb) ? { index, status: 'refused', reason: 'bad_verb' } : { index, status: 'stored' })) })
+  return Response.json({ results: events.map((e, index) => (refuse.has(e.action.verb) ? { index, status: 'refused', reason: 'bad_verb' } : unstored.has(e.action.verb) ? { index, status: 'failed', reason: 'store_error' } : { index, status: 'stored' })) })
 }
 
 const forwarder = () => new AnnalsForwarder(hub.db, { url: 'http://annals.test/', token: 't' }, createLogger('annals-test'), annalsFetch)
@@ -46,6 +51,8 @@ beforeEach(async () => {
   posts = []
   answer = 200
   refuse = new Set()
+  unreadable = new Set()
+  unstored = new Set()
 })
 
 describe('annals forwarding', () => {
@@ -136,6 +143,39 @@ describe('annals forwarding', () => {
     posts = []
     expect(await forwarder().pass()).toBe(0)
     expect(sent()).toEqual([])
+  })
+})
+
+describe('a row Annals cannot take', () => {
+  const rows = async (...names: string[]) => {
+    await actingAs({ kind: 'user', name: 'user@example.com' }, async () => {
+      for (const name of names) await record(hub.db, name === 'bad' ? 'secret.set' : 'token.issued', null, null, null, { name })
+    })
+    await settle()
+  }
+  const mark = async () => (await hub.db.query<{ value: { id: string } }>(`SELECT value FROM settings WHERE key = 'annals.forwarded'`)).rows[0]?.value.id
+  const newest = async () => (await hub.db.query<{ id: string }>('SELECT max(id) AS id FROM changes')).rows[0]?.id
+
+  it('is passed over alone when Annals refuses its whole batch, and every other row is kept', async () => {
+    await rows('one', 'two', 'bad', 'three', 'four')
+    unreadable = new Set(['secret.set'])
+    expect(await forwarder().pass()).toBe(4)
+    expect(sent().map((e) => e.action.target.id)).toEqual(['one', 'two', 'three', 'four'])
+    expect(await mark()).toBe(await newest())
+    posts = []
+    expect(await forwarder().pass()).toBe(0)
+    expect(sent()).toEqual([])
+  })
+
+  it('keeps the mark, and is sent again, when Annals took it and could not store it', async () => {
+    await rows('one', 'bad')
+    unstored = new Set(['secret.set'])
+    await expect(forwarder().pass()).rejects.toThrow(/did not store 1 of 2/)
+    expect(await mark()).toBeUndefined()
+    unstored = new Set()
+    posts = []
+    expect(await forwarder().pass()).toBe(2)
+    expect(await mark()).toBe(await newest())
   })
 })
 

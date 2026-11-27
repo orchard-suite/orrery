@@ -13,6 +13,13 @@
 // loses nothing. A pass sends every row after a mark and moves the mark only
 // past rows logged more than a minute ago, so a row whose transaction
 // commits late is still sent; Annals keeps one copy of each `event_key`.
+//
+// One bad row never holds up the rest. An event Annals refuses in a batch is
+// logged and passed over. A batch Annals refuses whole, as one it cannot
+// read or one too large, is sent again in halves until the row it cannot
+// take is alone, and that row alone is logged and passed over. An Annals
+// that is down, or could not store what it took, keeps the mark where it is,
+// and the next pass sends the same rows again.
 
 import type { Db } from './db.ts'
 import type { Logger } from './log.ts'
@@ -77,9 +84,13 @@ export interface AnnalsEvent {
 
 interface Receipt {
   index: number
-  status: 'stored' | 'duplicate' | 'refused' | 'error'
+  /** `failed` is Annals' own failure to store a valid event: it is sent again, never passed over. */
+  status: 'stored' | 'duplicate' | 'refused' | 'failed'
   reason?: string
 }
+
+/** The answers that refuse what was posted, whole: a body Annals cannot read, and one too large. */
+const REFUSED_WHOLE = new Set([400, 413])
 
 export class AnnalsForwarder {
   private readonly db: Db
@@ -130,7 +141,13 @@ export class AnnalsForwarder {
     return row.rows[0]?.value.id ?? '0'
   }
 
-  /** Posts one batch and counts what Annals holds of it. A refused event is logged and passed over: posting it again would be refused again. */
+  /**
+   * Posts one batch and counts what Annals holds of it. An event Annals
+   * refuses is logged and passed over: posting it again would be refused
+   * again. A batch refused whole is posted again in halves, so only the row
+   * Annals cannot take is passed over. Anything else that is not stored
+   * throws, before the mark moves.
+   */
   private async send(events: AnnalsEvent[]): Promise<number> {
     const res = await this.post(`${this.config.url.replace(/\/+$/, '')}/v1/events`, {
       method: 'POST',
@@ -138,17 +155,32 @@ export class AnnalsForwarder {
       body: JSON.stringify(events),
       signal: AbortSignal.timeout(30_000),
     })
+    if (REFUSED_WHOLE.has(res.status)) {
+      const answer = (await res.text()).slice(0, 200)
+      if (events.length === 1) {
+        recordAnnals('refused', 1)
+        this.log.warn('annals refused an activity row', { eventKey: events[0]!.event_key, status: res.status, reason: answer })
+        return 0
+      }
+      this.log.warn('annals refused a batch whole; sending it in halves to find the rows it cannot take', { events: events.length, status: res.status, reason: answer })
+      const half = Math.ceil(events.length / 2)
+      return (await this.send(events.slice(0, half))) + (await this.send(events.slice(half)))
+    }
     if (!res.ok) {
       recordAnnals('failed', events.length)
       throw new Error(`Annals answered ${res.status}: ${(await res.text()).slice(0, 200)}`)
     }
     const { results } = (await res.json()) as { results: Receipt[] }
     let held = 0
+    let unstored = 0
     results.forEach((r, i) => {
       recordAnnals(r.status, 1)
       if (r.status === 'stored' || r.status === 'duplicate') held++
-      else this.log.warn('annals refused an activity row', { eventKey: events[i]?.event_key, status: r.status, reason: r.reason })
+      else if (r.status === 'refused') this.log.warn('annals refused an activity row', { eventKey: events[i]?.event_key, status: r.status, reason: r.reason })
+      else unstored++
     })
+    // What Annals took and did not store is sent again from the same mark; what it stored comes back a duplicate.
+    if (unstored) throw new Error(`Annals did not store ${unstored} of ${events.length} events`)
     return held
   }
 }
