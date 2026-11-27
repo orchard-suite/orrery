@@ -202,6 +202,12 @@ All notable changes to this project will be documented in this file. See [standa
 * hide a column on a grid with no saved layout ([bf0b005](https://github.com/orchard-suite/orrery/commit/bf0b005b3df3da0a23aeab19002eefe03cf68a9c))
 * keep blueprint fields in the order written ([4606692](https://github.com/orchard-suite/orrery/commit/460669295d0c49554ce15b4d3a42a6f1b8c648f0))
 
+## [2.2.1](https://github.com/orchard-suite/orrery/compare/v2.2.0...v2.2.1) (2026-11-27)
+
+### Bug Fixes
+
+* **orrery:** leave quorum off a route to no one ([4fa8c82](https://github.com/orchard-suite/orrery/commit/4fa8c8271ce5baabe5964af9bcc6ab81c37def3e))
+
 ## [2.2.0](https://github.com/orchard-suite/orrery/compare/v2.1.3...v2.2.0) (2026-11-27)
 
 ### Features
