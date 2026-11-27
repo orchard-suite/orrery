@@ -3,9 +3,9 @@
 // reaches a final state. Each is the platform kit's event shape, kept in the
 // `detail.event` of the activity row written with the change that made it, so
 // the Annals forwarder carries it as it carries every other row, and the
-// dispatch forwarder of change events carries each one to the desk. Until the estate's judge answers for actions, the hub judges the
-// route itself: a run that waits for approval goes to people, any other to no
-// one.
+// change event forwarder carries each one to the dispatch desk. Until the
+// estate's judge answers for actions, the hub judges the route itself: a run
+// that waits for approval goes to people, any other to no one.
 
 import { createHash } from 'node:crypto'
 import { canonical, CHANGE_CHECKS, CHANGE_EVENTS, CHANGE_SENDER, CHECK_OUTPUT, DIFFERS_OUTPUT, STATEMENT_FIELDS, type ChangeCheck, type ChangeDecided, type ChangeEnded, type ChangeEvent, type ChangeGrant, type ChangeRouted, type ChangeStated, type ChangeStatement } from '../shared/change.ts'

@@ -406,9 +406,9 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     transaction that writes the run, each yes and no's `change.decided` with
     the decision, and its one `change.ended` (`endChange`, guarded by
     `change_ended_at`) wherever the run ends. Each event is the platform
-    kit's shape in the row's `detail.event`; the Annals forwarder, the
-    notice forwarder, and the change event forwarder read it there and
-    nowhere else. Never write one for a run that states nothing.
+    kit's shape in the row's `detail.event`; the Annals forwarder and the
+    change event forwarder read it there and nowhere else, and the desk
+    hears of a change from those events alone. Never write one for a run that states nothing.
     `dispatch-changes.ts` carries every one of them to the desk at
     `DISPATCH_URL` (`POST /v1/change-events`) from a mark of its own
     (`log-mark.ts`, which every forwarder of the log keeps its place with),

@@ -169,31 +169,17 @@ describe('the change events, carried on', () => {
     expect(JSON.stringify(waiting.facts)).not.toContain('"digest"')
   })
 
-  it('tell the desk of a change that ran, once for each thing it touches, and nothing of one refused', async () => {
+  it('leave a change that ran to its change events: the notices make no change on the desk', async () => {
     const ran = await ask('apply_now', { plan: statement })
     await report(ran.id, { state: 'running' })
     await report(ran.id, { state: 'succeeded', outputs: { statement_check: 'matched' } })
-    const refused = await ask('apply_change', { plan: statement })
-    await machine(approver)(`/v1/action-runs/${refused.id}/decline`, { method: 'POST', ...body({}) })
-    const changes: Record<string, unknown>[] = []
-    const desk = new NoticeForwarder({ db: hub.db, actions: hub.actions, batches: hub.batches, sets: hub.changeSets, schedules: hub.schedules, people: () => hub.people(), reader: hub.reader, blueprints: hub.blueprints, log: createLogger('notices-test') }, { url: 'http://dispatch.test', token: 'tok', publicUrl: 'https://hub.example.com', remindHours: 0 }, async (url, init) => {
-      if (String(url).endsWith('/v1/changes')) {
-        changes.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
-        return new Response('{}', { status: 201 })
-      }
+    const paths: string[] = []
+    const desk = new NoticeForwarder({ db: hub.db, actions: hub.actions, batches: hub.batches, sets: hub.changeSets, schedules: hub.schedules, people: () => hub.people(), reader: hub.reader, blueprints: hub.blueprints, log: createLogger('notices-test') }, { url: 'http://dispatch.test', token: 'tok', publicUrl: 'https://hub.example.com', remindHours: 0 }, async (url) => {
+      paths.push(new URL(String(url)).pathname)
       return new Response('{}', { status: 202 })
     })
     await desk.pass()
-    const urls = changes.map((c) => c.url)
-    expect(urls).toContain(`https://hub.example.com/actions/runs/${ran.id}`)
-    expect(urls).not.toContain(`https://hub.example.com/actions/runs/${refused.id}`)
-    expect(changes.find((c) => c.url === `https://hub.example.com/actions/runs/${ran.id}`)).toEqual({
-      service: 'acme-api-prod',
-      kind: 'plan',
-      title: 'apply_now: change plan-7f3a2c applied on workload acme-api-prod, statement matched',
-      url: `https://hub.example.com/actions/runs/${ran.id}`,
-      by: 'admin@example.com',
-      at: expect.any(String),
-    })
+    expect(paths).toContain('/v1/events')
+    expect([...new Set(paths)].sort()).toEqual(['/v1/events', '/v1/kinds'])
   })
 })

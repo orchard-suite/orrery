@@ -278,16 +278,15 @@ before it ran ends `refused`; one stopped while it ran, or whose outcome is
 not known, ends `failed`.
 
 The Annals forwarder sends each event as a record of its own (README,
-Access), and a change that ran (`ok` or `failed`) is recorded on the dispatch
-desk as a change to each thing the statement touches (Telling people about
-runs, below). A run whose action has no `change` input writes none of this;
-a statement sent to one is dropped like any input the action does not ask.
+Access). A run whose action has no `change` input writes none of this; a
+statement sent to one is dropped like any input the action does not ask.
 
 With `DISPATCH_URL` and `DISPATCH_TOKEN` set, every one of the four events
-also goes to the desk, where the watch takes up a change from its end: in
-batches of up to 200, as `POST /v1/change-events` with the body
+also goes to the desk, which keeps each change on the things it touches and
+watches it from its end. This is the only way the desk hears of a change.
+They go in batches of up to 200, as `POST /v1/change-events` with the body
 `{"events": [...]}`. The desk answers 200 with how many it kept, or 400
-with `{"error", "index"}` naming the first event it refuses, keeping none of
+with `{"error", "index", "reason"}` naming the first event it refuses, keeping none of
 the batch. A refused batch is sent again in halves until the event the desk
 refuses is alone, and only that event is logged and passed over. Any other
 answer, a 400 that names no index among them, leaves the events in the log:
@@ -2265,12 +2264,9 @@ Each event carries:
 
 A run that states a change (A change statement, above) is asked with the
 statement in words: the event's text says each effect and each part nobody
-could name, and its facts say the change's key and where it runs. Once such a
-change has run, `ok` or `failed`, its end is recorded on the desk through its
-changes route (`POST /v1/changes`), once for each thing the statement
-touches: the thing's key as the service, the artifact's kind as the kind,
-and a link to the run, so an incident on that thing shows it. A change
-refused before it ran changed nothing, and the desk hears nothing of it.
+could name, and its facts say the change's key and where it runs. The change
+itself reaches the desk as its change events (A change statement, above),
+never as a notice.
 
 A pass reads the activity log the way the Annals forwarder does, keyed
 `change:<id>`, so a desk that is down loses nothing and a row sent twice is
