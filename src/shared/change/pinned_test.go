@@ -1,5 +1,5 @@
-// The change statement's schema and worked examples here are copies of the
-// platform kit's, at the version go.mod requires. This test holds each copy
+// The change statement's schema, the base effect kinds, and the worked
+// examples here are copies of the platform kit's, at the version go.mod requires. This test holds each copy
 // to the file in that module, byte for byte, so the copy moves only when the
 // requirement does.
 package change_test
@@ -34,7 +34,7 @@ func moduleDir(t *testing.T) string {
 
 func TestCopiesMatchThePlatformKit(t *testing.T) {
 	kit := filepath.Join(moduleDir(t), "change", "schema")
-	copies := map[string]string{"statement.json": "statement.json"}
+	copies := map[string]string{"statement.json": "statement.json", "base-kinds.json": filepath.Join("..", "base-kinds.json")}
 	examples, err := filepath.Glob(filepath.Join("examples", "*.json"))
 	if err != nil {
 		t.Fatal(err)

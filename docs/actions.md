@@ -237,10 +237,16 @@ The tool sends the statement as an object, or as JSON text of one:
 { "inputs": { "plan": { "key": "plan-7f3a2c", "writer": { "name": "infra", "version": "3.1.0" }, "actor": { "kind": "agent", "id": "agent-1", "on_behalf_of": "user@example.com" }, "things": [{ "blueprint": "workload", "key": "acme-api-prod" }], "artifact": { "kind": "plan", "digest": "sha256:9f2c…" }, "applier": "hub", "effects": [{ "kind": "stops", "subject": { "blueprint": "workload", "key": "acme-api-prod" }, "path": "in-place", "size": 2, "undo": "yes", "claim": { "from": "writer" } }] } } }
 ```
 
-The hub checks it against the contract's schema as the run is asked and
-refuses one that breaks it, naming the input and the part. The schema it
-checks with is a copy in `src/shared/change/`, of the platform kit version
-`go.mod` requires; a Go test holds the copy to that version byte for byte.
+The hub checks it as the run is asked and refuses one that breaks it,
+naming the input and the part: against the contract's schema, and against
+the rules the platform kit's validator adds to it. No name but the actor's
+`id` and `on_behalf_of` holds an email address; no name holds `=`, a PEM
+header, what reads as a JSON web token, or a run of 32 letters and digits
+that mixes upper case, lower case, and digits; and an effect of a base kind
+with no unit (`opens`, `loses`, `cuts`) has no size. A kind the estate adds
+is the judge's to check. The schema and the base kinds it checks with are
+copies in `src/shared/change/`, of the platform kit version `go.mod`
+requires; a Go test holds each copy to that version byte for byte.
 The run keeps the statement and its digest (`statementDigest`): `sha256:`
 over its canonical form, as the contract takes it.
 

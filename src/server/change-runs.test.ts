@@ -56,6 +56,10 @@ describe('a run that states a change', () => {
     const r = await session('/v1/actions/apply_change/run', { method: 'POST', ...body({ inputs: { plan: { ...statement, applier: 'laptop' } } }) })
     expect(r.status).toBe(400)
     expect(await json(r)).toMatchObject({ input: 'plan', error: 'Input "plan": applier must be one of hub, asker' })
+    // What Annals would refuse downstream is refused here, as the platform kit's validator refuses it.
+    const named = await session('/v1/actions/apply_change/run', { method: 'POST', ...body({ inputs: { plan: { ...statement, things: [{ blueprint: 'workload', key: 'owner-user@example.com' }] } } }) })
+    expect(named.status).toBe(400)
+    expect(await json(named)).toMatchObject({ input: 'plan', error: 'Input "plan": things[0].key holds an email address; a person is named only as the actor' })
   })
 
   it('keeps the statement and its digest, and is stated, routed to who it waits on, decided, and ended', async () => {

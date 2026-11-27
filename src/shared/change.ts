@@ -3,10 +3,12 @@
 // kit's (`change/schema/statement.json`); `change/statement.json` beside this
 // file is a copy of it, at the version go.mod requires, and a Go test holds
 // the copy to that version byte for byte. This module checks a statement
-// against the copy, reads its canonical form for the digest, and says it in
-// words. It runs in the browser and in the hub alike; the hub alone hashes.
+// against the copy, holds it to the rules the kit's validator adds to the
+// schema, reads its canonical form for the digest, and says it in words. It
+// runs in the browser and in the hub alike; the hub alone hashes.
 
 import STATEMENT_SCHEMA from './change/statement.json' with { type: 'json' }
+import BASE_KINDS from './change/base-kinds.json' with { type: 'json' }
 
 /** One catalog entity, by its blueprint and key. */
 export interface ChangeRef {
@@ -217,9 +219,59 @@ function breaks(node: Node, v: unknown, at: string): string | null {
   return null
 }
 
-/** What is wrong with a value as a change statement, by the platform kit's schema, or null when it is one. */
+// The validator's rules ----------------------------------------------------------
+
+// What the platform kit's validator (`change/statement.go`) holds a statement
+// to beyond its schema, so a statement the hub takes is never refused by a
+// member downstream: a name is never a person's address, a value, or a secret.
+
+/** An address a person is reached at, anywhere in a name. */
+const EMAIL = /[^\s@<>"']+@[^\s@<>"']+\.[A-Za-z]{2,}/
+/** A JSON web token's first two parts. */
+const JWT = /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/
+/** A run long enough to be a key or a token: it reads as one when it mixes upper case, lower case, and digits, as base64 does. */
+const TOKEN_RUN = /[A-Za-z0-9+/]{32,}/g
+
+/** Why a name reads as content rather than a name: an assignment, a key, or a token. Null when it does not. */
+function valueIn(at: string, v: string): string | null {
+  if (v.includes('=')) return `${at} holds "="; a statement names a part, never what it is set to`
+  if (v.includes('-----BEGIN') || JWT.test(v)) return `${at} holds what reads as a key or a token`
+  for (const run of v.match(TOKEN_RUN) ?? []) if (/[A-Z]/.test(run) && /[a-z]/.test(run) && /[0-9]/.test(run)) return `${at} holds what reads as a key or a token`
+  return null
+}
+
+/** A name that is never a person: no address, no value, no secret. */
+function plainIssue(at: string, v: string | undefined): string | null {
+  if (!v) return null
+  if (EMAIL.test(v)) return `${at} holds an email address; a person is named only as the actor`
+  return valueIn(at, v)
+}
+
+/** The base kinds that have no unit, so an effect of one has no size. A kind the estate adds is the estate's to check. */
+const UNITLESS = new Set((BASE_KINDS as { kinds: { name: string; unit?: string }[] }).kinds.filter((k) => !k.unit).map((k) => k.name))
+
+/** What the platform kit's validator refuses in a statement the schema takes, or null. */
+function contentIssue(s: ChangeStatement): string | null {
+  const checks: [string, string | undefined][] = [['key', s.key], ['writer.version', s.writer.version]]
+  for (const [i, t] of (s.things ?? []).entries()) checks.push([`things[${i}].key`, t.key])
+  for (const [i, e] of (s.effects ?? []).entries()) checks.push([`effects[${i}].subject.key`, e.subject.key], [`effects[${i}].claim.rule`, e.claim.rule], [`effects[${i}].claim.version`, e.claim.version])
+  for (const [i, u] of (s.unknown ?? []).entries()) checks.push([`unknown[${i}].thing.key`, u.thing?.key], [`unknown[${i}].part`, u.part])
+  for (const [at, v] of checks) {
+    const wrong = plainIssue(at, v)
+    if (wrong) return wrong
+  }
+  // The actor is the one place a person may be named, by their address: it still holds no value or secret.
+  for (const [at, v] of [['actor.id', s.actor.id], ['actor.on_behalf_of', s.actor.on_behalf_of]] as const) {
+    const wrong = v ? valueIn(at, v) : null
+    if (wrong) return wrong
+  }
+  for (const [i, e] of (s.effects ?? []).entries()) if (e.size !== undefined && UNITLESS.has(e.kind)) return `effects[${i}]: the kind ${e.kind} has no unit, so it has no size`
+  return null
+}
+
+/** What is wrong with a value as a change statement, by the platform kit's schema and the rules its validator adds, or null when it is one. */
 export function statementIssue(value: unknown): string | null {
-  return breaks(ROOT, value, '')
+  return breaks(ROOT, value, '') ?? contentIssue(value as ChangeStatement)
 }
 
 /** A value as a statement, or why it is not one: an object, or JSON text of one. */

@@ -90,3 +90,50 @@ describe('an action with a change input', () => {
     expect(issues({ blueprint: 'workload', batch: { max: 5 }, inputs: { plan: { type: 'change' } } }).join()).toContain('states one change, to the things it names')
   })
 })
+
+// The cases of the platform kit's own validator test (change/statement_test.go), held to the hub's check.
+describe('the rules the platform kit validator adds to the schema', () => {
+  const good = (): ChangeStatement => ({
+    key: 'plan-1',
+    writer: { name: 'infra', version: '3.1.0' },
+    actor: { kind: 'agent', id: 'agent-1', on_behalf_of: 'user@example.com' },
+    things: [{ blueprint: 'workload', key: 'acme-api' }],
+    artifact: { kind: 'plan', digest: `sha256:${'a'.repeat(64)}` },
+    applier: 'hub',
+    effects: [{ kind: 'stops', subject: { blueprint: 'workload', key: 'acme-api' }, path: 'in-place', size: 2, undo: 'yes', claim: { from: 'writer' } }],
+  })
+  const refused = (mutate: (s: ChangeStatement) => void): string | null => {
+    const s = good()
+    mutate(s)
+    return statementIssue(s)
+  }
+
+  it('takes the good statement', () => {
+    expect(statementIssue(good())).toBeNull()
+  })
+
+  it('refuses each case the validator refuses', () => {
+    expect(refused((s) => (s.effects![0]!.kind = 'opens'))).toBe('effects[0]: the kind opens has no unit, so it has no size')
+    expect(refused((s) => s.things!.push(s.things![0]!))).toBe('things[1] is in the list twice')
+    expect(refused((s) => (s.things![0]!.key = 'owner-user@example.com'))).toBe('things[0].key holds an email address; a person is named only as the actor')
+    expect(refused((s) => (s.effects![0]!.claim.rule = 'ask user@example.com'))).toBe('effects[0].claim.rule holds an email address; a person is named only as the actor')
+    expect(refused((s) => (s.unknown = [{ part: 'xK9mQ2pL7vR4tY8wZ3nB6cF1hJ5dG0sA', why: 'unnamed' }]))).toBe('unknown[0].part holds what reads as a key or a token')
+    expect(refused((s) => (s.key = '-----BEGIN PRIVATE KEY'))).toBe('key holds what reads as a key or a token')
+    expect(refused((s) => (s.key = 'eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM0'))).toBe('key holds what reads as a key or a token')
+    expect(refused((s) => (s.unknown = [{ part: 'app_settings.MODE=fast', why: 'unnamed' }]))).toMatch(/^unknown\[0\]\.part must match/)
+    expect(refused((s) => (s.actor = { kind: 'person', id: 'p', on_behalf_of: 'q' }))).toBe('actor must not hold on_behalf_of here')
+    // A secret is no name anywhere, the actor's included.
+    expect(refused((s) => (s.actor.on_behalf_of = 'eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM0'))).toBe('actor.on_behalf_of holds what reads as a key or a token')
+    expect(refused((s) => (s.effects![0]!.subject.key = 'acme-api user@example.com'))).toMatch(/^effects\[0\]\.subject\.key holds an email address/)
+  })
+
+  it('takes a person named as the actor, plain names that are long, and a kind the estate adds', () => {
+    const s = good()
+    s.actor = { kind: 'person', id: 'user@example.com' }
+    s.things![0]!.key = '/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-acme-prod/providers/Microsoft.Web/sites/acme-api'
+    s.unknown = [{ part: 'azurerm_linux_web_app.api["primary"].site_config.application_stack', why: 'unnamed' }]
+    expect(statementIssue(s)).toBeNull()
+    // The kit refuses a kind its base set lacks until the estate's kinds are loaded; the hub holds no estate's kinds, so it leaves that to the judge.
+    expect(refused((x) => (x.effects![0]!.kind = 'sends'))).toBeNull()
+  })
+})

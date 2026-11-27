@@ -34,8 +34,9 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
   classes, and how a rule resolves through them), the ground (`ground.ts`:
   what a ground says of a blueprint's entities, worked out the same on
   either side), the change statement (`change.ts`: its check against the
-  platform kit's schema, its canonical form, and how it reads in words; the
-  schema and the worked examples in `change/` are copies of the platform
+  platform kit's schema and the rules its validator adds, its canonical
+  form, and how it reads in words; the schema, the base effect kinds, and
+  the worked examples in `change/` are copies of the platform
   kit's at the version `go.mod` requires, held to it byte for byte by
   `change/pinned_test.go`, so they move only by copying them again when that
   requirement moves, never by hand), and the wire types
