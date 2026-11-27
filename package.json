@@ -1,6 +1,6 @@
 {
   "name": "orrery",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "private": true,
   "description": "A self-hosted control plane and console for everything you own and run: push it in, see how it connects, know if it's healthy, and act on it.",
   "type": "module",
