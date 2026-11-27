@@ -1111,7 +1111,9 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     `-- concurrently:` on its first line: one `CREATE INDEX CONCURRENTLY IF
     NOT EXISTS` and nothing else, run outside a transaction (`build` in
     `db.ts`), which drops and builds again an index a stopped build left
-    invalid.
+    invalid. Such a build waits for every open snapshot, so nothing waits
+    for the migration lock inside a statement: a hub asks for it again and
+    again (`pg_try_advisory_lock`), never with `pg_advisory_lock`.
   - `bridge.ts` is what hubs on one database tell each other, over Postgres
     `LISTEN` and `NOTIFY`. The database itself says when a table a hub loads
     into memory changed (the triggers in `0008-definitions-notify.sql`, by

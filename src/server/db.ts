@@ -23,6 +23,8 @@ const MIGRATE_LOCK = 1
  */
 const LOCK_WAIT = '500ms'
 const LOCK_TRIES = 60
+/** How often a hub asks again for the migration another hub holds. */
+const MIGRATE_POLL_MS = 250
 
 export interface Migration {
   id: string
@@ -215,7 +217,11 @@ export class Db {
 
   /**
    * Applies every migration not yet recorded, each in its own transaction,
-   * under an advisory lock so a second hub starting at once waits. A start
+   * under an advisory lock so a second hub starting at once waits. It waits
+   * by asking for the lock again and again, never inside a statement that
+   * blocks: a statement waiting holds a snapshot open, and an index built
+   * concurrently waits for every snapshot, so the two would wait on each
+   * other until Postgres ended one as a deadlock. A start
    * with nothing new takes no table lock. A step that cannot get a table lock
    * within a few seconds rolls back and tries again, so it never holds up
    * the hub still serving beside it.
@@ -225,7 +231,10 @@ export class Db {
     try {
       // A step waits for another hub's migration and may run long itself: neither is cut by the statement timeout.
       await client.query('SET statement_timeout = 0')
-      await client.query('SELECT pg_advisory_lock($1, $2)', [LOCK_SPACE, MIGRATE_LOCK])
+      for (let waited = 0; !(await client.query<{ got: boolean }>('SELECT pg_try_advisory_lock($1, $2) AS got', [LOCK_SPACE, MIGRATE_LOCK])).rows[0]!.got; waited++) {
+        if (!waited) log.info('migration waits for another hub migrating')
+        await sleep(MIGRATE_POLL_MS)
+      }
       await client.query('CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())')
       const done = new Set((await client.query<{ id: string }>('SELECT id FROM schema_migrations')).rows.map((r) => r.id))
       const due = list.filter((m) => !done.has(m.id))

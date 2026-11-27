@@ -196,6 +196,20 @@ describe('migrations', () => {
     expect((await db.query("SELECT 1 FROM schema_migrations WHERE id = '9004-test-half'")).rowCount).toBe(1)
   })
 
+  it('builds an index concurrently while a second hub starts beside it and waits its turn', async () => {
+    // A hub that waits for the migration inside a statement holds a snapshot the build waits for, while it waits for the build: a deadlock.
+    await db.query('CREATE TABLE migrate_pair (id INT)')
+    const step: Migration = { id: '9005-test-pair', sql: '-- concurrently: a test of two hubs starting at once.\nCREATE INDEX CONCURRENTLY IF NOT EXISTS migrate_pair_id ON migrate_pair (id);\n' }
+    const other = new Db({ url }, log)
+    try {
+      await Promise.all([db.migrate(log, [...migrations(), step]), other.migrate(log, [...migrations(), step])])
+    } finally {
+      await other.close()
+    }
+    expect((await db.query<{ valid: boolean }>("SELECT indisvalid AS valid FROM pg_index WHERE indexrelid = 'migrate_pair_id'::regclass")).rows[0]?.valid).toBe(true)
+    expect((await db.query("SELECT 1 FROM schema_migrations WHERE id = '9005-test-pair'")).rowCount).toBe(1)
+  })
+
   it('runs outside a transaction only one index built concurrently', () => {
     expect(concurrentIndex({ id: 'x', sql: 'CREATE INDEX IF NOT EXISTS a ON t (b);' })).toBeNull()
     expect(concurrentIndex({ id: 'x', sql: '-- concurrently: why.\nCREATE INDEX CONCURRENTLY IF NOT EXISTS a_b ON t (b);' })).toBe('a_b')
