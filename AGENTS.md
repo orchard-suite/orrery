@@ -425,7 +425,9 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     run, which the Annals forwarder leaves out, and laid on the safe paths
     it went through (`safe-paths.ts`): one `orrery_safe_path` entity for
     each thing and path, written by the hub as its own source, whose
-    `proven_at` and `failed_at` only ever move forward. A clean sight on a
+    `proven_at` and `failed_at` only ever move forward, and which the
+    lifecycle pass lets go once its thing is gone (`prune`), as the schedule
+    records let go of a schedule that is gone. A clean sight on a
     path that is not `in-place`, of a kind that is no exposure, moves
     `proven_at`; harm moves `failed_at`; a blind sight moves neither. The
     entity page shows them (`components/SafePaths.tsx`).

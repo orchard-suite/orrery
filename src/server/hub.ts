@@ -98,6 +98,7 @@ export interface Hub {
   datasets: Datasets
   approvals: Approvals
   scheduleRecords: ScheduleRecords
+  safePaths: SafePaths
   /** Everyone enrolled, as the hub judges each now. */
   people: () => Identity[]
   events: Events
@@ -268,6 +269,7 @@ export async function createHub(config: Config, version: string, opts: { reset?:
     await checks.prune()
     await actions.expire()
     await reports.prune(config.RUN_IMAGE_DAYS)
+    await safePaths.prune()
     await datasets.prune()
     await batches.ended()
     await changeSets.ended()
@@ -320,7 +322,7 @@ export async function createHub(config: Config, version: string, opts: { reset?:
       }),
     catchUp,
   })
-  return { people, app, db, blueprints, standards, conventions, welcome, preferences, entities, reader, rules, runs, sources, writes, load, cardinality, budgets, previews, access, findings, git, scorecards, history, alerts, checks, actions, batches, changeSets, queries, schedules, reports, datasets, approvals, scheduleRecords, events, visibility, lists, icons, pictures, log, webDir: existsSync(webDir) ? webDir : null, deriver, tick, catchUp, bridge,
+  return { people, app, db, blueprints, standards, conventions, welcome, preferences, entities, reader, rules, runs, sources, writes, load, cardinality, budgets, previews, access, findings, git, scorecards, history, alerts, checks, actions, batches, changeSets, queries, schedules, reports, datasets, approvals, scheduleRecords, safePaths, events, visibility, lists, icons, pictures, log, webDir: existsSync(webDir) ? webDir : null, deriver, tick, catchUp, bridge,
     drain: () => {
       draining = true
     },

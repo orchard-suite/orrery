@@ -243,7 +243,8 @@ cloud, a cluster, a system, or a team until you define one.
   `rolling`, with when the watch last proved it and when it last saw it do
   harm (docs/actions.md, "The watch's verdict"). Any thing of any blueprint
   can have them, with no field added, and a judge reads one by its key,
-  `<blueprint>/<key>/<path>`. The thing's page lists them. These are locked, and every id starting with
+  `<blueprint>/<key>/<path>`. The thing's page lists them, and they go
+  with the thing when it is deleted. These are locked, and every id starting with
   `orrery_` is reserved for the hub, so they never collide with a blueprint of
   yours.
 - **Pushers bring their own blueprints.** A pusher offers the blueprints it

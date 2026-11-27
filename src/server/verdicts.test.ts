@@ -8,7 +8,7 @@ import { AnnalsForwarder, type AnnalsEvent } from './annals.ts'
 import { loadConfig } from './config.ts'
 import { createHub, type Hub } from './hub.ts'
 import { createLogger } from './log.ts'
-import { pathSteps, standing, stepped } from './safe-paths.ts'
+import { pathSteps, standing, stepped, thingOf } from './safe-paths.ts'
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://orrery:orrery@localhost:5433/orrery'
 const EXAMPLES = join(import.meta.dirname, '..', 'shared', 'change', 'examples')
@@ -70,6 +70,11 @@ describe('what a verdict says of safe paths', () => {
     expect(pathSteps({ sights: [swap('harm', 'cuts'), swap('clean')] })).toEqual([{ subject: { blueprint: 'workload', key: 'acme-api-prod' }, path: 'swap', outcome: 'failed' }])
     // A kind the estate adds is a disruption: the watch watches nothing else.
     expect(pathSteps({ sights: [swap('clean', 'halts')] })).toHaveLength(1)
+  })
+
+  it('reads its thing back from its key', () => {
+    expect(thingOf('workload/acme/api/prod/swap')).toEqual({ blueprint: 'workload', key: 'acme/api/prod' })
+    expect(thingOf('workload/swap')).toBeNull()
   })
 
   it('moves each day only forward, and stands green only while proven after the last harm', () => {
@@ -148,6 +153,19 @@ describe("the watch's verdicts, posted to the hub", () => {
     expect((await safePath('workload/acme-api-prod/swap'))!.fields.status).toBe('red')
     const list = await json<{ entities: Entity[] }>(await session(`/v1/entities?blueprint=${SAFE_PATH_BLUEPRINT}&filter=${encodeURIComponent(JSON.stringify({ relation: 'of_workload', target: 'workload:acme-api-prod' }))}`))
     expect(list.entities.map((e) => e.key)).toEqual(['workload/acme-api-prod/swap'])
+  })
+
+  it('go with their thing once it is gone', async () => {
+    expect(await hub.safePaths.prune()).toBe(0)
+    expect(await safePath('workload/acme-api-prod/swap')).not.toBeNull()
+    const cluster = (await hub.sources.issueToken('source', 'cluster again', { source: 'cluster' })).token
+    expect((await machine(cluster)('/v1/ingest/entities/workload/acme-web', { method: 'PUT', ...body({ title: 'Acme web' }) })).status).toBe(201)
+    expect(await json(await post(watch, [verdict('v-5', '2026-11-27T01:00:00Z', [{ ...swap('clean'), subject: { blueprint: 'workload', key: 'acme-web' } }])]))).toEqual({ kept: 1, duplicate: 0 })
+    expect(await safePath('workload/acme-web/swap')).not.toBeNull()
+    await hub.entities.tombstone([{ blueprint: 'workload', key: 'acme-web' }], 'cluster', null, { reason: 'gone' }, false)
+    expect(await hub.safePaths.prune()).toBe(1)
+    expect(await safePath('workload/acme-web/swap')).toBeNull()
+    expect(await safePath('workload/acme-api-prod/swap')).not.toBeNull()
   })
 
   it('never reach Annals from the hub: the watch sends its own', async () => {

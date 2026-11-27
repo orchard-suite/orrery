@@ -5,7 +5,8 @@
 // only forward: a clean sight moves the day it was proven, a sight of harm
 // the day it failed, and a blind sight neither. The hub writes the records as
 // its own source, one entity of `orrery_safe_path` for each thing and path,
-// linked to the thing through the relation for its blueprint.
+// linked to the thing through the relation for its blueprint, and lets one
+// go once its thing is gone.
 
 import { kindFamily, PATH_IN_PLACE, type ChangeObserved, type ChangeRef } from '../shared/change.ts'
 import { entityId, SAFE_PATH_BLUEPRINT, SAFE_PATH_OF, type StatusLevel } from '../shared/model.ts'
@@ -47,6 +48,13 @@ export function pathSteps(e: Pick<ChangeObserved, 'sights'>): PathStep[] {
 
 /** A safe path's key: its thing's blueprint and key, and the path. A blueprint holds no slash and a path is a slug, so it reads back one way. */
 export const safePathKey = (subject: ChangeRef, path: string): string => `${subject.blueprint}/${subject.key}/${path}`
+
+/** The thing a safe path's key names, or null for a key that is not one. */
+export function thingOf(key: string): ChangeRef | null {
+  const first = key.indexOf('/')
+  const last = key.lastIndexOf('/')
+  return first > 0 && last > first + 1 ? { blueprint: key.slice(0, first), key: key.slice(first + 1, last) } : null
+}
 
 /** What a safe path holds of its proof. */
 export interface Proof {
@@ -136,6 +144,32 @@ export class SafePaths {
       if (r.outcome === 'rejected') log.error('safe path rejected', { key: items[i]!.key, errors: r.errors })
     })
     return counts
+  }
+
+  /**
+   * Lets go of each safe path whose thing the catalog no longer holds: a
+   * path is a fact about its thing, and goes with it. A thing whose
+   * blueprint was renamed is found under its new id. How many it let go.
+   */
+  async prune(): Promise<number> {
+    const { db, blueprints, entities, log } = this.deps
+    const held = await db.query<{ key: string }>(`SELECT key FROM entities WHERE blueprint = $1 AND state <> 'deleted'`, [SAFE_PATH_BLUEPRINT])
+    const things = held.rows.flatMap((r) => {
+      const thing = thingOf(r.key)
+      return thing ? [{ key: r.key, thing: { blueprint: blueprints.resolve(thing.blueprint), key: thing.key } }] : []
+    })
+    if (!things.length) return 0
+    const alive = await db.query<{ blueprint: string; key: string }>(
+      `SELECT e.blueprint, e.key FROM entities e JOIN unnest($1::text[], $2::text[]) AS t(blueprint, key) ON e.blueprint = t.blueprint AND e.key = t.key WHERE e.state <> 'deleted'`,
+      [things.map((t) => t.thing.blueprint), things.map((t) => t.thing.key)],
+    )
+    const kept = new Set(alive.rows.map((r) => entityId(r)))
+    const gone = things.filter((t) => !kept.has(entityId(t.thing))).map((t) => ({ blueprint: SAFE_PATH_BLUEPRINT, key: t.key }))
+    if (gone.length) {
+      await entities.tombstone(gone, 'hub', null, { reason: 'its thing is gone' }, false)
+      log.info('safe paths let go: their things are gone', { paths: gone.map((g) => g.key) })
+    } else log.debug('safe paths kept: every thing is held', { paths: things.length })
+    return gone.length
   }
 
   /** Whether the catalog holds the thing, as anything but a tombstone. */

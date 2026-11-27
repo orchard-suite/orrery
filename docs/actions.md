@@ -327,7 +327,9 @@ Each verdict moves the **safe paths** of the things it saw, kept as
 | `in-place`, or an exposure kind | nothing: in-place absorbs nothing, and the statement itself proves an exposure |
 
 A day only moves forward, so a verdict with an earlier window, or one sent
-twice, changes nothing. A thing the catalog does not hold gets no safe path.
+twice, changes nothing. A thing the catalog does not hold gets no safe path,
+and a safe path goes with its thing: once the thing is deleted, the next
+lifecycle pass lets its safe paths go.
 A safe path is green while it was proven after it last did harm, and red
 otherwise. A kind the estate adds counts as a disruption, since the watch
 watches nothing else. The thing's page lists its safe paths and their days,
