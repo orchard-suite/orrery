@@ -41,6 +41,7 @@ import { fetchTimed } from './metrics.ts'
 import { attachedInputs, changeInput } from '../shared/input-kinds.ts'
 import { applierText, statementLines, type ChangeEnded, type ChangeStatement } from '../shared/change.ts'
 import { eventOfRow } from './change-events.ts'
+import { markOf, moveMark, settledCeiling } from './log-mark.ts'
 import { outputText } from '../shared/run-marks.ts'
 import { parseEntityId, REPORT_BLUEPRINT, type ActionRun } from '../shared/model.ts'
 import { worthTelling } from '../shared/schedule.ts'
@@ -113,7 +114,6 @@ export function changeKind(artifact: string): string {
 function peopleOf(audience: { owner: string; deliver: string[] }): { person: string }[] {
   return [...new Set([audience.owner, ...audience.deliver])].filter((p) => EMAIL.test(p)).slice(0, TO_MAX).map((person) => ({ person }))
 }
-const SETTLE_SECONDS = 60
 const MARK_KEY = 'notices.forwarded'
 const BATCH = 200
 
@@ -200,9 +200,8 @@ export class NoticeForwarder {
   async pass(): Promise<number> {
     const { db, log } = this.deps
     if (!this.declared) await this.declare()
-    const mark = await this.mark()
-    const settled = await db.query<{ id: string | null }>(`SELECT max(id) AS id FROM changes WHERE coalesce(logged_at, at) < clock_timestamp() - make_interval(secs => $1)`, [SETTLE_SECONDS])
-    const ceiling = settled.rows[0]?.id ?? null
+    const mark = await markOf(db, MARK_KEY)
+    const ceiling = await settledCeiling(db)
     let sent = 0
     let after = mark
     for (;;) {
@@ -223,10 +222,7 @@ export class NoticeForwarder {
       }
       if (rows.rows.length < BATCH) break
     }
-    if (ceiling && BigInt(ceiling) > BigInt(mark)) {
-      await db.query(`INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [MARK_KEY, JSON.stringify({ id: ceiling })])
-      for (const id of this.told) if (BigInt(id) <= BigInt(ceiling)) this.told.delete(id)
-    }
+    if (await moveMark(db, MARK_KEY, mark, ceiling)) for (const id of this.told) if (BigInt(id) <= BigInt(ceiling!)) this.told.delete(id)
     if (this.config.remindHours > 0) sent += await this.remind()
     if (sent) log.info('runs told to dispatch', { events: sent, mark: ceiling ?? mark })
     return sent
@@ -265,11 +261,6 @@ export class NoticeForwarder {
     } catch (error) {
       this.deps.log.warn('kinds not declared to dispatch; asking again on the next pass', { error })
     }
-  }
-
-  private async mark(): Promise<string> {
-    const row = await this.deps.db.query<{ value: { id: string } }>(`SELECT value FROM settings WHERE key = $1`, [MARK_KEY])
-    return row.rows[0]?.value.id ?? '0'
   }
 
   /** Posts one event. A refusal of the event itself is logged and passed over; anything else throws, so the mark stays. */

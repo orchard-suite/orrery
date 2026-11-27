@@ -4,7 +4,7 @@
 
 import type { ModelLayout } from '../shared/api.ts'
 import { hasRule } from '../shared/policy.ts'
-import { actionTargets, parseDuration, EDITION_BLUEPRINT, REPORT_BLUEPRINT, RUNNER_BLUEPRINT, SCHEDULE_BLUEPRINT, SOURCE_BLUEPRINT, type AccessRule, type Action, type Blueprint, type RelationDef } from '../shared/model.ts'
+import { actionTargets, parseDuration, EDITION_BLUEPRINT, REPORT_BLUEPRINT, RUNNER_BLUEPRINT, SAFE_PATH_BLUEPRINT, SAFE_PATH_OF, SCHEDULE_BLUEPRINT, SOURCE_BLUEPRINT, type AccessRule, type Action, type Blueprint, type RelationDef } from '../shared/model.ts'
 import { record } from './activity.ts'
 import type { Blueprints } from './blueprints.ts'
 import type { Db } from './db.ts'
@@ -140,6 +140,28 @@ const HUB_BLUEPRINTS: BlueprintSpec[] = [
       report: { target: REPORT_BLUEPRINT, title: 'Report', inverseTitle: 'Editions', description: 'The report it is an edition of.' },
     },
   },
+  {
+    id: SAFE_PATH_BLUEPRINT,
+    title: 'Safe path',
+    group: 'Orrery',
+    description:
+      "Inventory: one way a change reaches one thing without changing it in place, such as a staging slot's swap or a rolling restart, and when the watch last proved it. Having a path is no proof, so a record is made only once a change went through the path and the watch saw what it did: a change the watch saw cause no stop moves `proven_at` forward, one it saw do harm moves `failed_at`, and one it could not see moves neither. Keyed `<blueprint>/<key>/<path>` of its thing, so a judge reads it by blueprint, key, and path. It links to its thing through one relation for each blueprint (`of_<blueprint>`), so each thing's page lists its safe paths. Status is green while the path was proven after it last did harm, and red otherwise. Seen by whoever sees its thing, until an admin says otherwise. The hub writes it from the watch's verdicts: change it by a watched change, never by hand.",
+    icon: 'shield',
+    standalone: true,
+    status: { field: 'status' },
+    fields: {
+      path: { type: 'string', title: 'Path', description: 'How the change reached the thing: swap, rolling, or a path the estate names. Never in-place.', overridable: false },
+      subject_blueprint: { type: 'string', title: 'Thing blueprint', description: 'The blueprint of the thing the path reaches.', overridable: false },
+      subject_key: { type: 'string', title: 'Thing key', description: 'The key of the thing the path reaches.', overridable: false },
+      proven_at: { type: 'datetime', title: 'Last proven', description: 'When the watch last saw a change through this path cause no stop: the end of its window.', overridable: false },
+      proven_run: { type: 'string', title: 'Proven by run', description: 'The run whose change last proved it.', overridable: false },
+      failed_at: { type: 'datetime', title: 'Last failed', description: 'When the watch last saw a change through this path do harm: the end of its window.', overridable: false },
+      failed_run: { type: 'string', title: 'Failed by run', description: 'The run whose change last did harm through it.', overridable: false },
+      status: { type: 'enum', values: LEVELS, overridable: false },
+      status_reason: { type: 'string', overridable: false },
+    },
+    relations: {},
+  },
 ]
 
 /** The prefix of the report blueprint's relations: `home_<blueprint>` links a report to its home, an entity of that blueprint. */
@@ -170,6 +192,12 @@ export function scheduleRelations(actions: Pick<Action, 'blueprint'>[], blueprin
   )
 }
 
+/** The safe path blueprint's relations: one for each blueprint a safe path's thing is in, and only for a blueprint that exists. */
+export function safePathRelations(things: readonly string[], blueprints: Pick<Blueprints, 'get' | 'resolve'>): Record<string, RelationDef> {
+  const targets = [...new Set(things.map((id) => blueprints.resolve(id)))].filter((id) => blueprints.get(id)).sort()
+  return Object.fromEntries(targets.map((id) => [`${SAFE_PATH_OF}${id}`, { target: id, title: 'Thing', inverseTitle: 'Safe paths', description: 'The thing this path reaches: a change through it was watched there.' }]))
+}
+
 /**
  * The rule a hub blueprint is written with. Subjects are the hub's to name:
  * an admin opens a hub blueprint to whoever sees what its entities link to,
@@ -180,6 +208,8 @@ function ruleOf(id: string, given: AccessRule | undefined, relations: Record<str
   if (id === EDITION_BLUEPRINT) return { grants: [], subjects: ['report'] }
   // A report is seen by whoever sees its home until an admin says otherwise: a team's report is the team's to read.
   given ??= id === REPORT_BLUEPRINT ? { grants: [], subjects: ['home'] } : undefined
+  // A safe path is seen by whoever sees its thing until an admin says otherwise: it is a fact about the thing.
+  given ??= id === SAFE_PATH_BLUEPRINT ? { grants: [], subjects: ['thing'] } : undefined
   if (!given) return ADMINS_ONLY
   const { subjects, ...rest } = given
   const all = Object.keys(relations)
@@ -207,6 +237,8 @@ export interface HubShape {
   schedules?: Record<string, RelationDef>
   /** The report blueprint's relations, from the reports' homes (`reportRelations`). */
   reports?: Record<string, RelationDef>
+  /** The safe path blueprint's relations, from the things safe paths are of (`safePathRelations`). */
+  safePaths?: Record<string, RelationDef>
   /** Days an edition is kept, from when it was published. */
   editionKeepDays?: number
 }
@@ -224,7 +256,8 @@ export async function ensureHubBlueprints(db: Db, blueprints: Blueprints, entiti
   const given = await hubAccess(db)
   for (const spec of HUB_BLUEPRINTS) {
     const held = blueprints.get(spec.id)
-    const relations = spec.id === SCHEDULE_BLUEPRINT ? (shape.schedules ?? held?.relations ?? {}) : spec.id === REPORT_BLUEPRINT ? (shape.reports ?? held?.relations ?? {}) : spec.relations
+    const follows = spec.id === SCHEDULE_BLUEPRINT ? shape.schedules : spec.id === REPORT_BLUEPRINT ? shape.reports : spec.id === SAFE_PATH_BLUEPRINT ? shape.safePaths : undefined
+    const relations = spec.id === SCHEDULE_BLUEPRINT || spec.id === REPORT_BLUEPRINT || spec.id === SAFE_PATH_BLUEPRINT ? (follows ?? held?.relations ?? {}) : spec.relations
     const days = shape.editionKeepDays ?? (held?.lifecycle?.expire ? Math.round(parseDuration(held.lifecycle.expire.after) / 86_400_000) : EDITION_KEEP_DAYS)
     const lifecycle = spec.id === EDITION_BLUEPRINT ? { lifecycle: { expire: { after: `${days}d`, field: 'published_at' } } } : {}
     await blueprints.save({ ...spec, ...lifecycle, relations, access: ruleOf(spec.id, given[spec.id], relations) }, { kind: 'hub' }, 'hub', (bp, field) => entities.valuesOf(bp, field))

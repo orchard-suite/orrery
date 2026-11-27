@@ -3,7 +3,8 @@
 How to put an estate into Orrery so that it stays consistent as it grows.
 
 Orrery ships no model. A new hub holds only its own `orrery_source`,
-`orrery_runner`, and `orrery_schedule`. An estate brings its model itself: a file through Model →
+`orrery_runner`, `orrery_schedule`, `orrery_report`, `orrery_report_edition`,
+and `orrery_safe_path`. An estate brings its model itself: a file through Model →
 Import in the web app, a catalog file in a git source, or the blueprints its
 pushers offer. The rules in this guide hold for any model.
 

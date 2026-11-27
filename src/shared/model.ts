@@ -547,6 +547,10 @@ export const SCHEDULE_BLUEPRINT = 'orrery_schedule'
 export const REPORT_BLUEPRINT = 'orrery_report'
 /** The hub keeps one entity of this blueprint per published edition of a report, for as long as editions are kept. */
 export const EDITION_BLUEPRINT = 'orrery_report_edition'
+/** The hub keeps one entity of this blueprint per thing and path a watched change went through, with when the watch last proved it and when it last saw harm. */
+export const SAFE_PATH_BLUEPRINT = 'orrery_safe_path'
+/** The prefix of the safe path blueprint's relations: `of_<blueprint>` links a safe path to its thing, an entity of that blueprint. */
+export const SAFE_PATH_OF = 'of_'
 
 /** What a blueprint is called on screen, read from the blueprints the reader sees. */
 export type BlueprintNamer = (blueprint: Pick<Blueprint, 'id' | 'title' | 'group'> | string | undefined) => string
@@ -852,6 +856,8 @@ export interface Source {
   actions: boolean
   /** The source may put and remove its own scorecards with its token, as a judge publishes its rules. Set by an admin. */
   scorecards: boolean
+  /** The source may post the watch's verdict on the changes this hub stated, as the estate's watch does. Set by an admin. */
+  watches: boolean
   /** For a runner: the tools it lends its identity to. Set by an admin. Without it, the runner runs no tool. */
   serves?: RunnerServes
   /** For a runner: how many jobs it runs at once, as it last said when it asked for work. */
@@ -1004,6 +1010,7 @@ export const CHANGE_KINDS = [
   'change.routed',
   'change.decided',
   'change.ended',
+  'change.observed',
 ] as const
 export type ChangeKind = (typeof CHANGE_KINDS)[number]
 

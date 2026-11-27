@@ -2,13 +2,13 @@
 // is asked, routed right after, decided for each yes and no, and ended when it
 // reaches a final state. Each is the platform kit's event shape, kept in the
 // `detail.event` of the activity row written with the change that made it, so
-// the Annals forwarder and the dispatch forwarder carry it as they carry every
-// other row. Until the estate's judge answers for actions, the hub judges the
+// the Annals forwarder carries it as it carries every other row, and the
+// dispatch forwarder of change events carries each one to the desk. Until the estate's judge answers for actions, the hub judges the
 // route itself: a run that waits for approval goes to people, any other to no
 // one.
 
 import { createHash } from 'node:crypto'
-import { canonical, CHANGE_CHECKS, CHANGE_SENDER, CHECK_OUTPUT, DIFFERS_OUTPUT, STATEMENT_FIELDS, type ChangeCheck, type ChangeDecided, type ChangeEnded, type ChangeEvent, type ChangeGrant, type ChangeRouted, type ChangeStated, type ChangeStatement } from '../shared/change.ts'
+import { canonical, CHANGE_CHECKS, CHANGE_EVENTS, CHANGE_SENDER, CHECK_OUTPUT, DIFFERS_OUTPUT, STATEMENT_FIELDS, type ChangeCheck, type ChangeDecided, type ChangeEnded, type ChangeEvent, type ChangeGrant, type ChangeRouted, type ChangeStated, type ChangeStatement } from '../shared/change.ts'
 import type { ActionRunState } from '../shared/model.ts'
 import type { OutputValue } from '../shared/run-marks.ts'
 
@@ -99,9 +99,9 @@ export function endedEvent(run: string, digest: string, at: Date, outcome: Chang
   return { event: 'change.ended', ...after(run, digest, `${run}.ended`, at), outcome, check, ...(check === 'differed' && differs.length ? { differs } : {}) }
 }
 
-/** The change event an activity row carries, when it is one of a run's. */
+/** The change event an activity row carries, when it is one this hub sent of a run's. The watch's verdict is another member's, and none of these. */
 export function eventOfRow(kind: string, detail: Record<string, unknown>): ChangeEvent | null {
   const e = detail.event
-  if (!kind.startsWith('change.') || typeof e !== 'object' || e === null) return null
+  if (!(CHANGE_EVENTS as readonly string[]).includes(kind) || typeof e !== 'object' || e === null) return null
   return (e as ChangeEvent).event === kind ? (e as ChangeEvent) : null
 }

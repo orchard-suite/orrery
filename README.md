@@ -238,7 +238,12 @@ cloud, a cluster, a system, or a team until you define one.
   schedules that run on it, and an admin may show each schedule to whoever
   can see what it runs on. The hub also keeps `orrery_report` and
   `orrery_report_edition`: a team's reports and every edition they publish
-  (Reports, below). These are locked, and every id starting with
+  (Reports, below). And it keeps `orrery_safe_path`: each way a change
+  reached a thing without changing it in place, such as `swap` or
+  `rolling`, with when the watch last proved it and when it last saw it do
+  harm (docs/actions.md, "The watch's verdict"). Any thing of any blueprint
+  can have them, with no field added, and a judge reads one by its key,
+  `<blueprint>/<key>/<path>`. The thing's page lists them. These are locked, and every id starting with
   `orrery_` is reserved for the hub, so they never collide with a blueprint of
   yours.
 - **Pushers bring their own blueprints.** A pusher offers the blueprints it
@@ -1373,8 +1378,8 @@ issue it a token from the Sources page, then point a pusher at
 | `GITHUB_API_URL` | `https://api.github.com` | The GitHub REST API a `github_workflow` backend calls |
 | `ANNALS_URL`, `ANNALS_TOKEN` | (none) | [Annals](https://github.com/orchard-suite/annals)' API port and a token it issued for the source `orrery`. With both, the activity log is forwarded to it (see Access) |
 | `ANNALS_EVERY_SECONDS` | `30` | How often the activity log is forwarded to Annals |
-| `DISPATCH_URL`, `DISPATCH_TOKEN` | (none) | A dispatch desk's API port and a token it issued. With both, every self-service run is told to it as events (docs/actions.md, Telling people about runs) |
-| `DISPATCH_EVERY_SECONDS` | `5` | How often runs are told to dispatch |
+| `DISPATCH_URL`, `DISPATCH_TOKEN` | (none) | A dispatch desk's API port and a token it issued. With both, every self-service run is told to it as events (docs/actions.md, Telling people about runs), and every change event of a run is sent to it (docs/actions.md, A change statement) |
+| `DISPATCH_EVERY_SECONDS` | `5` | How often runs are told to dispatch, and change events sent to it |
 | `DISPATCH_APPROVERS_GROUP` | (none) | A group on the desk that hears of a run waiting for approval when no rule names who decides it, or more than twenty people are named. Unset, such a run is for nobody by name |
 | `DISPATCH_REMIND_HOURS` | `24` | How long a run waits for approval before its deciders are told once more. `0` never reminds |
 | `DISPATCH_PUBLIC_URL` | (none) | The desk's address for people. With it, the profile menu links each person to the page where they choose how they are told |
@@ -1770,7 +1775,9 @@ statement") also writes its change events, `change.stated`, `change.routed`,
 its own under the event's key, such as `<run id>.stated`: about the change
 (`target` of kind `change`), caused by its stated event, with the
 statement's digest as `change.after_hash`, and, on the stated one, the
-things it touches as `items` and its effects as `effects`.
+things it touches as `items` and its effects as `effects`. The watch's
+verdict on a change, `change.observed`, is kept with its run too, and is
+not forwarded: the watch sends it to Annals itself.
 
 ## Deploy
 

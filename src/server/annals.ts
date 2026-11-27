@@ -9,6 +9,9 @@
 // stated event, with the things and effects the statement names and its
 // digest as the change's hash.
 //
+// The watch's verdict on a change (`change.observed`) is kept here too, and
+// left out: the watch sends it to Annals itself, so it is never there twice.
+//
 // The rows are already written when a pass runs, so an Annals that is down
 // loses nothing. A pass sends every row after a mark and moves the mark only
 // past rows logged more than a minute ago, so a row whose transaction
@@ -25,6 +28,7 @@ import type { Db } from './db.ts'
 import type { Logger } from './log.ts'
 import { fetchTimed, recordAnnals } from './metrics.ts'
 import { eventOfRow } from './change-events.ts'
+import { markOf, moveMark, settledCeiling } from './log-mark.ts'
 import type { ChangeEvent, ChangeStatement } from '../shared/change.ts'
 
 export interface AnnalsConfig {
@@ -38,10 +42,10 @@ export interface AnnalsConfig {
 const GOVERNANCE = ['model', 'layout', 'sources', 'secrets', 'access', 'actions']
 /** The actor kinds whose every row is forwarded. */
 const ACTORS = ['user', 'token']
+/** The rows of what another member told the hub and tells Annals itself: the watch's verdict on a change. */
+const HEARD_ELSEWHERE = ['change.observed']
 /** Events in one POST; Annals takes up to 1000. */
 const BATCH = 500
-/** A row logged this recently may sit behind one whose transaction has not committed. */
-const SETTLE_SECONDS = 60
 const MARK_KEY = 'annals.forwarded'
 /** Annals' limit on a reason or a title, in bytes. */
 const TEXT_MAX = 512
@@ -111,34 +115,26 @@ export class AnnalsForwarder {
    * mark moves, so the next pass sends the same rows again.
    */
   async pass(): Promise<number> {
-    const mark = await this.mark()
-    const settled = await this.db.query<{ id: string | null }>(`SELECT max(id) AS id FROM changes WHERE coalesce(logged_at, at) < clock_timestamp() - make_interval(secs => $1)`, [SETTLE_SECONDS])
-    const ceiling = settled.rows[0]?.id ?? null
+    const mark = await markOf(this.db, MARK_KEY)
+    const ceiling = await settledCeiling(this.db)
     let sent = 0
     let after = mark
     for (;;) {
       const rows = await this.db.query<Row>(
         `SELECT id, at, kind, category, outcome, blueprint, key, source, actor, actor_kind, detail
            FROM changes
-          WHERE id > $1 AND (category = ANY($2) OR actor_kind = ANY($3))
+          WHERE id > $1 AND (category = ANY($2) OR actor_kind = ANY($3)) AND kind <> ALL($5)
           ORDER BY id LIMIT $4`,
-        [after, GOVERNANCE, ACTORS, BATCH],
+        [after, GOVERNANCE, ACTORS, BATCH, HEARD_ELSEWHERE],
       )
       if (!rows.rows.length) break
       sent += await this.send(rows.rows.map(toEvent))
       after = rows.rows.at(-1)!.id
       if (rows.rows.length < BATCH) break
     }
-    if (ceiling && BigInt(ceiling) > BigInt(mark)) {
-      await this.db.query(`INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [MARK_KEY, JSON.stringify({ id: ceiling })])
-    }
+    await moveMark(this.db, MARK_KEY, mark, ceiling)
     if (sent) this.log.info('annals forwarded', { events: sent, mark: ceiling ?? mark })
     return sent
-  }
-
-  private async mark(): Promise<string> {
-    const row = await this.db.query<{ value: { id: string } }>(`SELECT value FROM settings WHERE key = $1`, [MARK_KEY])
-    return row.rows[0]?.value.id ?? '0'
   }
 
   /**

@@ -83,6 +83,7 @@ import type { Stars } from './stars.ts'
 import { MOST_STEP_THINGS, WalkFull, type Walks } from './walks.ts'
 import { PreferenceError, type Preferences } from './preferences.ts'
 import { WelcomeError, type Welcome } from './welcome.ts'
+import { VerdictRefused, VERDICTS_MAX, type Verdicts } from './verdicts.ts'
 import { isPreferenceName, type PreferenceValues } from '../shared/preferences.ts'
 import { buildTour, type WelcomeDef, type WelcomeFound, type WelcomeResponse } from '../shared/welcome.ts'
 import { ACTION_PINNED, ACTION_UNPINNED, BLUEPRINT_PINNED, BLUEPRINT_UNPINNED, ENTITY_STARRED, ENTITY_UNSTARRED, WALK_STEP_ADDED, WALK_STEP_REMOVED, BROWSER_EVENTS, BROWSER_MEASURES, TELEMETRY_LIMITS, type TelemetryBatch } from '../shared/usage.ts'
@@ -118,6 +119,8 @@ export interface HttpDeps {
   reports: Reports
   datasets: Datasets
   approvals: Approvals
+  /** The watch's verdicts on the changes this hub stated. */
+  verdicts: Verdicts
   events: Events
   visibility: Visibility
   lists: Lists
@@ -1969,13 +1972,14 @@ export function createApp(deps: HttpDeps): Hono<AppEnv> {
   const manageSources = allow('sources.manage', 'source.changed', { deep: true })
   app.put('/v1/sources/:id', manageSources, async (c) => {
     const { gitToken, ...spec } = (await c.req.json()) as Record<string, unknown> & { gitToken?: string | null }
-    // What a source acts for, whether it may define actions or put scorecards, and which tools a runner serves are set by admins alone; anyone else's save keeps them.
+    // What a source acts for, whether it may define actions, put scorecards, or post the watch's verdicts, and which tools a runner serves are set by admins alone; anyone else's save keeps them.
     const existing = sources.get(c.req.param('id'))
     if (!c.get('identity').admin) {
       if ('serves' in spec && stableJson(spec.serves ?? null) !== stableJson(existing?.serves ?? null)) throw new AdminOnly('Only an admin says which tools a runner serves')
       if ('actsFor' in spec && (spec.actsFor ?? null) !== (existing?.actsFor ?? null)) throw new AdminOnly('Only an admin sets what a source acts for')
       if ('actions' in spec && Boolean(spec.actions) !== (existing?.actions ?? false)) throw new AdminOnly('Only an admin lets a source define actions')
       if ('scorecards' in spec && Boolean(spec.scorecards) !== (existing?.scorecards ?? false)) throw new AdminOnly('Only an admin lets a source put scorecards')
+      if ('watches' in spec && Boolean(spec.watches) !== (existing?.watches ?? false)) throw new AdminOnly("Only an admin lets a source post the watch's verdicts")
     }
     const saved = await sources.save(c.req.param('id'), spec, gitToken)
     await runs.syncSourceEntities(saved.id)
@@ -2446,6 +2450,26 @@ export function createApp(deps: HttpDeps): Hono<AppEnv> {
     await sources.touch(source.id, { seen: new Date() })
     const { seen } = starterRunsSchema.parse(await c.req.json().catch(() => ({})))
     return c.json({ starter: source.id, runs: await actions.heldBy(source.id, seen ?? []) } satisfies StarterRunsResponse)
+  })
+  // The watch's verdict on a change this hub stated, from a source an admin let post it. The source is the sender.
+  const verdictsSchema = z.object({ events: z.array(z.unknown()).min(1).max(VERDICTS_MAX) }).strict()
+  app.post('/v1/ingest/change-events', async (c) => {
+    const source = sourceOf(c)
+    if (!source.watches) {
+      log.warn("verdict refused: the source may not post the watch's verdicts", { source: source.id })
+      return c.json({ error: "This needs a source an admin let post the watch's verdicts (its watches grant)" }, 403)
+    }
+    const body = verdictsSchema.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) return c.json({ error: `The body is {"events": [change.observed events]}, 1 to ${VERDICTS_MAX}: ${body.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ')}` }, 400)
+    try {
+      const taken = await deps.verdicts.take(source.id, body.data.events)
+      await sources.touch(source.id, { seen: new Date() })
+      return c.json(taken)
+    } catch (error) {
+      if (!(error instanceof VerdictRefused)) throw error
+      log.warn('verdicts refused: none kept', { source: source.id, events: body.data.events.length, index: error.index, reason: error.message })
+      return c.json({ error: error.message, index: error.index }, 400)
+    }
   })
   app.post('/v1/ingest/alerts/alertmanager', async (c) => {
     const source = sourceOf(c)

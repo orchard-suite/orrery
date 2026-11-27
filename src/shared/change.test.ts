@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { checkAction } from './action-spec.ts'
-import { canonical, readStatement, statementIssue, statementLines, type ChangeStatement } from './change.ts'
+import { canonical, kindFamily, readObserved, readStatement, statementIssue, statementLines, type ChangeObserved, type ChangeStatement } from './change.ts'
 import { changeInput, INPUT_KINDS, inputText } from './input-kinds.ts'
 
 const EXAMPLES = join(import.meta.dirname, 'change', 'examples')
@@ -45,6 +45,38 @@ describe('a change statement, checked against the platform kit schema', () => {
     expect(inputText({ type: 'change' }, stated)).toBe('change plan-7f3a2c')
     expect(changeInput({ reason: { type: 'string' }, plan: { type: 'change' } })).toBe('plan')
     expect(changeInput({ reason: { type: 'string' } })).toBeNull()
+  })
+})
+
+describe("the watch's verdict, read strictly against the platform kit's event schema", () => {
+  const observed = example<ChangeObserved>('event-observed.json')
+  const with_ = (patch: Record<string, unknown>) => ({ ...observed, ...patch })
+
+  it('takes the worked example', () => {
+    expect(readObserved(observed)).toEqual({ ok: true, event: observed })
+  })
+
+  it('refuses a field the contract does not have, at any depth', () => {
+    expect(readObserved(with_({ note: 'x' }))).toEqual({ ok: false, error: 'note is not part of a change event' })
+    expect(readObserved(with_({ sights: [{ ...observed.sights![0]!, value: 3 }] }))).toEqual({ ok: false, error: 'sights[0].value is not part of a change event' })
+    expect(readObserved(with_({ watch: { ...observed.watch, host: 'a' } }))).toEqual({ ok: false, error: 'watch.host is not part of a change event' })
+  })
+
+  it('refuses any other event, and an observation that breaks the rules', () => {
+    expect(readObserved({ ...observed, event: 'change.ended' })).toEqual({ ok: false, error: "event must be change.observed: the hub takes only the watch's verdict" })
+    const { of: _of, ...orphan } = observed
+    expect(readObserved(orphan)).toEqual({ ok: false, error: 'of is required' })
+    expect(readObserved(with_({ from: '2026-11-26' }))).toEqual({ ok: false, error: 'from must be a time, as RFC 3339 writes one' })
+    expect(readObserved(with_({ to: '2026-11-26T20:00:00Z' }))).toEqual({ ok: false, error: 'to is before from' })
+    expect(readObserved(with_({ sights: [{ ...observed.sights![0]!, verdict: 'fine' }] }))).toEqual({ ok: false, error: 'sights[0].verdict must be one of clean, harm, blind' })
+    expect(readObserved(with_({ sights: [{ ...observed.sights![0]!, path: 'Swap' }] })).ok).toBe(false)
+    expect(readObserved(with_({ of: { sender: observed.sender, key: observed.key } }))).toEqual({ ok: false, error: 'of names the event itself; an event cannot belong to itself' })
+    expect(readObserved(with_({ incidents: [{ system: 'dispatch', id: 'user@example.com' }] }))).toEqual({ ok: false, error: 'incidents[0].id holds an email address; a person is named only as the actor' })
+    expect(readObserved('nope')).toEqual({ ok: false, error: 'the event must be an object' })
+  })
+
+  it('knows the family of each base kind, and none of a kind the estate adds', () => {
+    expect([kindFamily('stops'), kindFamily('cuts'), kindFamily('opens'), kindFamily('halts')]).toEqual(['disruption', 'disruption', 'exposure', null])
   })
 })
 

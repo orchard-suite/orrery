@@ -21,6 +21,8 @@ import { Blueprints } from './blueprints.ts'
 import { Bridge } from './bridge.ts'
 import { Deriver } from './derive.ts'
 import { ensureHubBlueprints, HUB_ACTIONS, retireBuiltinCatalog } from './builtin.ts'
+import { SafePaths } from './safe-paths.ts'
+import { Verdicts } from './verdicts.ts'
 import { Datasets } from './datasets.ts'
 import { Checks } from './checks.ts'
 import { Scorecards } from './scorecards.ts'
@@ -252,10 +254,12 @@ export async function createHub(config: Config, version: string, opts: { reset?:
   })
   await approvals.load()
   if (approvals.setting()) await sources.ensureBuiltins([approvals.setting()!.blueprint])
+  const safePaths = new SafePaths({ db, entities, blueprints, reader, sources, events, log: createLogger('safe-paths') })
+  const verdicts = new Verdicts({ db, actions, safePaths, log: createLogger('verdicts') })
   const git = new GitSources({ db, blueprints, standards, conventions, welcome, entities, rules, runs, scorecards, alerts, actions, icons, sources, events, visibility, log: createLogger('git') }, dataDir)
   const idTokens = opts.idTokens ?? (config.AUTH_MODE === 'proxy' && config.AUTH_ISSUER ? idTokenVerifier(config.AUTH_ISSUER, config.AUTH_AUDIENCE ?? '', undefined, config.AUTH_API_SCOPE) : undefined)
   let draining = false
-  const app = createApp({ draining: () => draining, idTokens, config, db, blueprints, standards, conventions, welcome, entities, reader, runs, rules, sources, writes, load, cardinality, budgets, previews, access, findings, git, scorecards, alerts, checks, actions, batches, changeSets, queries, schedules, reports, datasets, approvals, events, visibility, lists, icons, pictures, presence, pins, stars, walks, preferences, log: createLogger('http'), version, webDir: existsSync(webDir) ? webDir : null })
+  const app = createApp({ draining: () => draining, idTokens, config, db, blueprints, standards, conventions, welcome, entities, reader, runs, rules, sources, writes, load, cardinality, budgets, previews, access, findings, git, scorecards, alerts, checks, actions, batches, changeSets, queries, schedules, reports, datasets, approvals, verdicts, events, visibility, lists, icons, pictures, presence, pins, stars, walks, preferences, log: createLogger('http'), version, webDir: existsSync(webDir) ? webDir : null })
   const tick = () => timed('lifecycle.tick', async () => {
     await runs.tick(config.TOMBSTONE_DAYS, config.RUN_DAYS, config.RELINK_MINUTES)
     await scorecards.recordHistory()

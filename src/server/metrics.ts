@@ -44,6 +44,7 @@ export type Task =
   | 'git.refresh'
   | 'annals.forward'
   | 'notices.forward'
+  | 'dispatch.change_events'
   | 'posture'
   | 'posture.people'
   | 'posture.handmade'
@@ -69,6 +70,7 @@ interface Instruments {
   task: Histogram
   kept: Counter
   annals: Counter
+  dispatchChanges: Counter
   auth: Counter
   refusals: Counter
   usage: Counter
@@ -108,6 +110,7 @@ function instruments(): Instruments {
     task: meter.createHistogram('orrery.task.duration', { unit: 's', description: 'How long a piece of hub work took: a re-link pass, a listing, findings, a commit, by task and outcome.', advice: { explicitBucketBoundaries: SECONDS } }),
     kept: meter.createCounter('orrery.kept.lookups', { description: 'Questions asked of the kept answers, by kind and whether one was kept.' }),
     annals: meter.createCounter('orrery.annals.events', { description: 'Activity rows sent to Annals, by what it answered: stored, duplicate, refused, error, or failed when the post itself failed.' }),
+    dispatchChanges: meter.createCounter('orrery.dispatch.change_events', { description: 'Change events sent to the dispatch desk, by what it answered: kept, duplicate, refused, or failed when the desk did not take the post.' }),
     client: meter.createHistogram('http.client.request.duration', { unit: 's', description: 'How long a call the hub made took, by who it called and the status it answered.', advice: { explicitBucketBoundaries: SECONDS } }),
     auth: meter.createCounter('orrery.auth', { description: 'How each request signed in, by surface and outcome: let in, refused as unknown or not signed in, or a token whose person is no longer here.' }),
     refusals: meter.createCounter('orrery.refusals', { description: 'Requests the hub turned down on policy, by reason: a permission not held, a hidden field read, a hand edit of what access is decided from, a write a source does not own.' }),
@@ -381,6 +384,10 @@ export function recordKept(kind: 'listing' | 'memo', result: 'hit' | 'miss' | 's
 /** Counts activity rows Annals answered for, by its answer. */
 export function recordAnnals(outcome: string, n: number): void {
   instruments().annals.add(n, { 'orrery.outcome': outcome })
+}
+
+export function recordDispatchChanges(outcome: 'kept' | 'duplicate' | 'refused' | 'failed', n: number): void {
+  instruments().dispatchChanges.add(n, { 'orrery.outcome': outcome })
 }
 
 /** Set while a gauge reads the database for a collection: those reads are the metrics' own, and no caller waits on them. */

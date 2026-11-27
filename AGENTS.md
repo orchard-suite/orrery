@@ -406,9 +406,29 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     transaction that writes the run, each yes and no's `change.decided` with
     the decision, and its one `change.ended` (`endChange`, guarded by
     `change_ended_at`) wherever the run ends. Each event is the platform
-    kit's shape in the row's `detail.event`; the Annals forwarder and the
-    notice forwarder read it there and nowhere else. Never write one for a
-    run that states nothing.
+    kit's shape in the row's `detail.event`; the Annals forwarder, the
+    notice forwarder, and the change event forwarder read it there and
+    nowhere else. Never write one for a run that states nothing.
+    `dispatch-changes.ts` carries every one of them to the desk at
+    `DISPATCH_URL` (`POST /v1/change-events`) from a mark of its own
+    (`log-mark.ts`, which every forwarder of the log keeps its place with),
+    so a desk that does not take them holds them in the log and never holds
+    up a notice or a run; a batch refused at an index is sent again in
+    halves until the one event refused is alone, and only that one is passed
+    over. The watch's verdict on a change comes back as `change.observed` at
+    `POST /v1/ingest/change-events`, from a source an admin gave the
+    `watches` grant (`verdicts.ts`): read strictly against the kit's event
+    schema, it must name a `change.stated` key this hub sent with that
+    change's digest, a batch is refused whole at its first bad event, and
+    the sender is the source's id, never the body's word. It is kept once for
+    each sender and key (the `changes_observed` index) as a row with its
+    run, which the Annals forwarder leaves out, and laid on the safe paths
+    it went through (`safe-paths.ts`): one `orrery_safe_path` entity for
+    each thing and path, written by the hub as its own source, whose
+    `proven_at` and `failed_at` only ever move forward. A clean sight on a
+    path that is not `in-place`, of a kind that is no exposure, moves
+    `proven_at`; harm moves `failed_at`; a blind sight moves neither. The
+    entity page shows them (`components/SafePaths.tsx`).
     `insights.ts` reads usage from the runs alone. `approvals.ts` writes the
     hub's own approvals into the estate's approvals blueprint from the
     activity log; never write them where a run or schedule is decided. A run
@@ -475,7 +495,7 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     treats a made field differently from one a person wrote.
   - `builtin.ts` is the only model the hub brings: the reserved `orrery_`
     blueprints it keeps entities for (sources, runners, schedules, reports,
-    and report editions). It also brings the hub's own actions,
+    report editions, and safe paths). It also brings the hub's own actions,
     `HUB_ACTIONS`: the ones its reports are made and changed with. A report links to its home through one relation
     per blueprint a home is in, `home_<blueprint>` (`reportRelations`), and
     is seen by whoever sees its home until an admin says otherwise; an
@@ -488,8 +508,11 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     the actions by `scheduleRelations` and kept in step by each records
     pass. When an admin opens a hub blueprint by `subjects`, the hub names
     every relation it has (`ruleOf`), so a schedule is seen by whoever sees
-    what it runs on. Removing a blueprint drops a hub blueprint's relation to
-    it and is never refused for one.
+    what it runs on. A safe path links to its thing through one relation per
+    blueprint a thing is in, `of_<blueprint>` (`safePathRelations`), and is
+    seen by whoever sees its thing until an admin says otherwise. Removing a
+    blueprint drops a hub blueprint's relation to it and is never refused for
+    one.
   - `access.ts` keeps the people the login proxy has let in and the roles
     given to them. `auth.ts` turns a request into an identity with
     permissions, and `allow` in it guards a route. The permissions are the

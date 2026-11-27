@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import type { TokenIssued, TokenSummary } from '../shared/api.ts'
 import { filterSchema, tiersSchema } from '../shared/action-spec.ts'
-import { ACTS_FOR, EDITION_BLUEPRINT, REPORT_BLUEPRINT, RUNNER_BLUEPRINT, SCHEDULE_BLUEPRINT, SOURCE_BLUEPRINT, SOURCE_CLASSES, parseDuration, type GracePolicy, type Source, type SourceClass, type StatusLevel } from '../shared/model.ts'
+import { ACTS_FOR, EDITION_BLUEPRINT, REPORT_BLUEPRINT, RUNNER_BLUEPRINT, SAFE_PATH_BLUEPRINT, SCHEDULE_BLUEPRINT, SOURCE_BLUEPRINT, SOURCE_CLASSES, parseDuration, type GracePolicy, type Source, type SourceClass, type StatusLevel } from '../shared/model.ts'
 import { record } from './activity.ts'
 import type { Db } from './db.ts'
 import { NO_QUEUE, type Queue } from './derive.ts'
@@ -24,6 +24,7 @@ export const sourceSpecSchema = z.object({
   actsFor: z.string().regex(ACTS_FOR, 'an entity reference, <blueprint>:<key>').nullable().default(null),
   actions: z.boolean().default(false),
   scorecards: z.boolean().default(false),
+  watches: z.boolean().default(false),
   // Which tools a runner runs. Null takes the rule away.
   serves: z
     .object({
@@ -101,9 +102,9 @@ export class Sources {
   /** The `ui` and `hub` sources always exist. The hub writes its own blueprints, and `also`: the blueprint it keeps its approvals in. */
   async ensureBuiltins(also: string[] = []): Promise<void> {
     if (!this.cache.has('ui')) await this.save('ui', { title: 'Web app', class: 'ui', description: 'Edits made by people in the web app.', blueprints: ['*'], deleteGrant: ['*'], cadence: null })
-    const own = [SOURCE_BLUEPRINT, RUNNER_BLUEPRINT, SCHEDULE_BLUEPRINT, REPORT_BLUEPRINT, EDITION_BLUEPRINT, ...also]
+    const own = [SOURCE_BLUEPRINT, RUNNER_BLUEPRINT, SCHEDULE_BLUEPRINT, REPORT_BLUEPRINT, EDITION_BLUEPRINT, SAFE_PATH_BLUEPRINT, ...also]
     if (!equal(this.cache.get('hub')?.spec.blueprints, own)) {
-      await this.save('hub', { title: 'Hub', class: 'hub', description: 'The hub itself: it keeps the source, runner, schedule, report, and report edition entities.', blueprints: own, deleteGrant: own, cadence: null })
+      await this.save('hub', { title: 'Hub', class: 'hub', description: 'The hub itself: it keeps the source, runner, schedule, report, report edition, and safe path entities.', blueprints: own, deleteGrant: own, cadence: null })
     }
   }
 
@@ -142,7 +143,7 @@ export class Sources {
 
   /**
    * Registers or changes a source. A spec that leaves out `actsFor`,
-   * `actions`, or `serves` keeps what the source had, so a save that does
+   * `actions`, `scorecards`, `watches`, or `serves` keeps what the source had, so a save that does
    * not know of them never clears what an admin set.
    */
   async save(id: string, input: unknown, gitToken?: string | null): Promise<Source> {
@@ -150,7 +151,7 @@ export class Sources {
     const existing = this.cache.get(id)
     const was = existing && sourceSpecSchema.safeParse(existing.spec).data
     const given = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
-    const parsed = sourceSpecSchema.safeParse({ ...given, actsFor: 'actsFor' in given ? given.actsFor : (was?.actsFor ?? null), actions: 'actions' in given ? given.actions : (was?.actions ?? false), scorecards: 'scorecards' in given ? given.scorecards : (was?.scorecards ?? false), serves: 'serves' in given ? given.serves : was?.serves })
+    const parsed = sourceSpecSchema.safeParse({ ...given, actsFor: 'actsFor' in given ? given.actsFor : (was?.actsFor ?? null), actions: 'actions' in given ? given.actions : (was?.actions ?? false), scorecards: 'scorecards' in given ? given.scorecards : (was?.scorecards ?? false), watches: 'watches' in given ? given.watches : (was?.watches ?? false), serves: 'serves' in given ? given.serves : was?.serves })
     if (!parsed.success) throw new SourceError(`Invalid source: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
     const spec = parsed.data
     if (spec.serves == null) delete spec.serves
@@ -168,7 +169,7 @@ export class Sources {
     )
     const row = res.rows[0]!
     this.cache.set(id, row)
-    const grants = { ...(spec.actsFor !== (was?.actsFor ?? null) ? { actsFor: spec.actsFor } : {}), ...(spec.actions !== (was?.actions ?? false) ? { actions: spec.actions } : {}), ...(spec.scorecards !== (was?.scorecards ?? false) ? { scorecards: spec.scorecards } : {}), ...(stable(spec.serves ?? null) !== stable(was?.serves ?? null) ? { serves: spec.serves ?? null } : {}) }
+    const grants = { ...(spec.actsFor !== (was?.actsFor ?? null) ? { actsFor: spec.actsFor } : {}), ...(spec.actions !== (was?.actions ?? false) ? { actions: spec.actions } : {}), ...(spec.scorecards !== (was?.scorecards ?? false) ? { scorecards: spec.scorecards } : {}), ...(spec.watches !== (was?.watches ?? false) ? { watches: spec.watches } : {}), ...(stable(spec.serves ?? null) !== stable(was?.serves ?? null) ? { serves: spec.serves ?? null } : {}) }
     if (!existing || stable(was ?? existing.spec) !== stable(spec) || sealed !== existing.git_token) await record(this.db, 'source.changed', null, id, null, { created: !existing, class: spec.class, ...grants })
     this.log.info('source saved', { source: id, class: spec.class, created: !existing, ...grants })
     return this.toSource(row)
@@ -397,6 +398,7 @@ export class Sources {
       actsFor: row.spec.actsFor ?? null,
       actions: row.spec.actions ?? false,
       scorecards: row.spec.scorecards ?? false,
+      watches: row.spec.watches ?? false,
       ...(row.spec.serves ? { serves: row.spec.serves } : {}),
       ...(row.width !== null && row.width !== undefined ? { width: row.width } : {}),
       writes: this.writes.of(row.id),

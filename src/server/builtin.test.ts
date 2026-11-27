@@ -34,7 +34,7 @@ afterAll(async () => {
 
 describe('a fresh hub', () => {
   it('holds only its own blueprints', async () => {
-    expect((await ids()).sort()).toEqual(['orrery_report', 'orrery_report_edition', 'orrery_runner', 'orrery_schedule', 'orrery_source'])
+    expect((await ids()).sort()).toEqual(['orrery_report', 'orrery_report_edition', 'orrery_runner', 'orrery_safe_path', 'orrery_schedule', 'orrery_source'])
   })
 
   it('counts no source list of blueprints under the grid', async () => {

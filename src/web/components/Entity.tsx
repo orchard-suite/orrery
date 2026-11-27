@@ -17,6 +17,7 @@ import { HomeActions } from './ActionStart.tsx'
 import { HomeQueries } from './HomeQueries.tsx'
 import { EntityStar } from './Star.tsx'
 import { HomeReports } from './HomeReports.tsx'
+import { SafePaths } from './SafePaths.tsx'
 import { ReportOutline } from './ReportOutline.tsx'
 import { EditReport } from './ReportCompose.tsx'
 import { Orbit, type OrbitNode } from './Orbit.tsx'
@@ -199,6 +200,7 @@ export function EntityPage({ blueprint, entityKey }: { blueprint: string; entity
           <HomeReports entity={e} />
           {blueprint === REPORT_BLUEPRINT && typeof e.fields.layout === 'string' && <ReportOutline layout={e.fields.layout} />}
           {e.alerts.length > 0 && <AlertsList e={e} />}
+          <SafePaths entity={e} />
           <Relations e={e} bp={bp} canEdit={canEdit} onEdit={onEdit} />
           <Fields e={e} bp={bp} defs={fields} canEdit={canEdit} onEdit={onEdit} />
           {fields.map(([name, def]) => {

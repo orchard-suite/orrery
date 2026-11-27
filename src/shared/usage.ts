@@ -96,6 +96,7 @@ export const CHANGE_EVENTS: Record<ChangeKind, string | null> = {
   'change.routed': null,
   'change.decided': null,
   'change.ended': null,
+  'change.observed': null,
   'welcome.changed': 'Welcome Tour Changed',
 }
 

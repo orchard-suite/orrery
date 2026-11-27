@@ -198,6 +198,11 @@ function SourceDetail({ source, keys, onIssue }: { source: Source; keys: TokenSu
           <span className="text-ink-500">puts scorecards </span>
           {s.scorecards ? 'yes' : 'no'}
         </div>
+        <div>
+          <span className="text-ink-500">posts the watch's verdicts </span>
+          {/* A hub one release back sends no such grant. */}
+          {s.watches ? 'yes' : 'no'}
+        </div>
         {s.class === 'runner' && (
           <div className="min-w-0 wrap-anywhere" title={servesText(s.serves)}>
             <span className="text-ink-500">serves tools </span>
@@ -349,6 +354,7 @@ function SourceForm({ existing, onDone }: { existing?: Source; onDone: (saved?: 
   const admin = useIsAdmin()
   const [actions, setActions] = useState(existing?.actions ?? false)
   const [scorecards, setScorecards] = useState(existing?.scorecards ?? false)
+  const [watches, setWatches] = useState(existing?.watches ?? false)
   const [serves, setServes] = useState<ServesForm>({ tiers: existing?.serves?.tiers ?? [], sources: existing?.serves?.sources?.join(', ') ?? '', blueprint: existing?.serves?.on?.blueprint ?? '', where: existing?.serves?.on?.where ? JSON.stringify(existing.serves.on.where) : '' })
   const [wrong, setWrong] = useState<Error | null>(null)
   const [f, setF] = useState({
@@ -372,7 +378,7 @@ function SourceForm({ existing, onDone }: { existing?: Source; onDone: (saved?: 
     gitInstallationId: existing?.git?.auth?.type === 'github-app' ? existing.git.auth.installationId : '',
     gitToken: '',
   })
-  const changed = useChanged([f, serves, actions, scorecards])
+  const changed = useChanged([f, serves, actions, scorecards, watches])
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value })
   const csv = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean)
   const field = (label: string, node: React.ReactNode, hint?: string) => (
@@ -408,7 +414,7 @@ function SourceForm({ existing, onDone }: { existing?: Source; onDone: (saved?: 
             git: f.class === 'git' ? { url: f.gitUrl, branch: f.gitBranch, glob: f.gitGlob, auth: f.gitAuth === 'github-app' ? { type: 'github-app', appId: f.gitAppId, installationId: f.gitInstallationId } : { type: 'token' } } : undefined,
             gitToken: f.gitToken || undefined,
             // Only an admin sets these; anyone else's save leaves them as they are.
-            ...(admin ? { actsFor: f.actsFor.trim() || null, actions, scorecards, serves: lends } : {}),
+            ...(admin ? { actsFor: f.actsFor.trim() || null, actions, scorecards, watches, serves: lends } : {}),
           }
           save.mutate({ id: f.id.trim(), spec }, { onSuccess: () => onDone({ id: f.id.trim(), title: f.title || f.id.trim(), class: f.class }) })
         }}
@@ -450,6 +456,10 @@ function SourceForm({ existing, onDone }: { existing?: Source; onDone: (saved?: 
             <label className="flex items-center gap-2 self-end pb-1 text-sm">
               <input type="checkbox" checked={scorecards} onChange={(e) => setScorecards(e.target.checked)} />
               May put its own scorecards with its token
+            </label>
+            <label className="flex items-center gap-2 self-end pb-1 text-sm">
+              <input type="checkbox" checked={watches} onChange={(e) => setWatches(e.target.checked)} />
+              May post the watch's verdicts on changes this hub stated
             </label>
           </>
         )}

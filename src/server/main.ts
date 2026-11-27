@@ -9,6 +9,7 @@ import { JournalPruner } from './ownership.ts'
 import { Leadership } from './leader.ts'
 import { AnnalsForwarder } from './annals.ts'
 import { NoticeForwarder } from './notices.ts'
+import { DispatchChanges } from './dispatch-changes.ts'
 import { createLogger } from './log.ts'
 import { observeProcess, startMetrics, timed } from './metrics.ts'
 import { startTelemetry } from './telemetry.ts'
@@ -63,6 +64,10 @@ const notices = config.DISPATCH_URL && config.DISPATCH_TOKEN
   : null
 if (notices) jobs.add('notices', config.DISPATCH_EVERY_SECONDS * 1000, () => timed('notices.forward', () => notices.pass()).catch((error) => log.warn('run notices failed', { error })))
 else log.info('run notices off', { reason: 'DISPATCH_URL or DISPATCH_TOKEN unset' })
+// Every change event of a run goes to the same desk, from a mark of its own, so a desk that refuses them holds up no notice.
+const changeEvents = config.DISPATCH_URL && config.DISPATCH_TOKEN ? new DispatchChanges(hub.db, { url: config.DISPATCH_URL, token: config.DISPATCH_TOKEN }, createLogger('dispatch-changes')) : null
+if (changeEvents) jobs.add('change events', config.DISPATCH_EVERY_SECONDS * 1000, () => timed('dispatch.change_events', () => changeEvents.pass()).catch((error) => log.warn('change events not sent to dispatch; they wait for the next pass', { error })))
+else log.info('change events to dispatch off', { reason: 'DISPATCH_URL or DISPATCH_TOKEN unset' })
 
 const stopWork = async () => {
   await jobs.stop()

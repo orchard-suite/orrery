@@ -41,6 +41,7 @@ export function openapi(serverUrl: string, version: string): Record<string, unkn
       actsFor: { type: ['string', 'null'], description: 'The entity this source speaks for, <blueprint>:<key>, such as the service whose token it is. Set by an admin' },
       actions: { type: 'boolean', description: 'The source may put self-service actions with its token. Set by an admin' },
       scorecards: { type: 'boolean', description: 'The source may put and remove its own scorecards with its token, as a judge publishes its rules. Set by an admin' },
+      watches: { type: 'boolean', description: "The source may post the watch's verdicts on the changes this hub stated, at POST /v1/ingest/change-events. Set by an admin" },
       serves: {
         type: ['object', 'null'],
         description: 'A runner only: the tools it runs with its key. tiers are the tiers a tool on it may have; sources are the sources that may put a tool on it with their own token (none: only an admin and git); on is a filter over the entity a tool on it is declared from. Null: it runs no tool. Set by an admin',
@@ -83,7 +84,7 @@ export function openapi(serverUrl: string, version: string): Record<string, unkn
         bearerAuth: {
           type: 'http',
           scheme: 'bearer',
-          description: 'Send the token you were given in the Authorization header: `Authorization: Bearer orr_acc_...`. No other header or query parameter is read. A personal token (orr_usr_) is the person it was made for, with their roles: it reads what they read and changes what they may change, the model included where they hold model.edit. An access token (orr_acc_) reads; a source token (orr_src_) writes through /v1/ingest, puts custom icons at PUT /v1/icons/{name}, and, when an admin gave its source the actions grant, puts and removes its own actions at /v1/actions/{id}, and, with the scorecards grant, its own scorecards at /v1/scorecards/{id}. Where the hub names a scope for people, an access token its sign-in issuer gave an app for that scope acts as the person it names, with their roles.',
+          description: 'Send the token you were given in the Authorization header: `Authorization: Bearer orr_acc_...`. No other header or query parameter is read. A personal token (orr_usr_) is the person it was made for, with their roles: it reads what they read and changes what they may change, the model included where they hold model.edit. An access token (orr_acc_) reads; a source token (orr_src_) writes through /v1/ingest, puts custom icons at PUT /v1/icons/{name}, and, when an admin gave its source the actions grant, puts and removes its own actions at /v1/actions/{id}, and, with the scorecards grant, its own scorecards at /v1/scorecards/{id}, and, with the watches grant, posts the verdicts of the watch at /v1/ingest/change-events. Where the hub names a scope for people, an access token its sign-in issuer gave an app for that scope acts as the person it names, with their roles.',
         },
       },
       schemas: {
@@ -405,6 +406,14 @@ export function openapi(serverUrl: string, version: string): Record<string, unkn
               },
             },
           },
+        },
+      },
+      '/v1/ingest/change-events': {
+        post: {
+          summary:
+            "The watch's verdicts on changes this hub stated (a source token whose source has the watches grant): change.observed events in the platform kit's shape, read strictly, each naming a change.stated event this hub sent (of.sender orrery, of.key <run id>.stated) with that change's digest. The sender is the source's own id, whatever the event says. Kept once for each sender and key, with the run, and laid on the safe paths the change went through (orrery_safe_path). Answers {kept, duplicate}, or 400 {error, index} naming the first event it refuses, keeping none of the batch",
+          security: bearer,
+          requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', additionalProperties: false, properties: { events: { type: 'array', minItems: 1, maxItems: 100, items: { type: 'object', additionalProperties: true } } }, required: ['events'] } } } },
         },
       },
       '/v1/ingest/sources/{id}/refresh': { post: { summary: 'Pull a git source now (webhook target)', security: bearer } },
