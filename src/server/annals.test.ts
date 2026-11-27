@@ -201,7 +201,8 @@ describe('change records', () => {
   it('send the route, each answer, and the end as caused by the stated change', () => {
     const routed = changeRecord(routedEvent({ id: 'r1', action: 'apply' }, digest, at, '2.2.0', [{ values: ['user@example.com'] }], 1))
     expect(routed).toMatchObject({ event_key: 'r1.routed', actor: { kind: 'system', id: 'orrery' }, action: { verb: 'change.routed', target, outcome: 'ok' }, cause: 'r1.stated', cause_source: 'orrery', change: { after_hash: digest }, labels: { route: 'people', quorum: '1', judge: 'orrery', pack: 'action.apply' } })
-    expect(changeRecord(routedEvent({ id: 'r1', action: 'apply' }, digest, at, '2.2.0', null, 1)).labels).toEqual({ route: 'no_one', quorum: '0', judge: 'orrery', pack: 'action.apply' })
+    // A quorum is how many of the people must agree: a route to no one has none.
+    expect(changeRecord(routedEvent({ id: 'r1', action: 'apply' }, digest, at, '2.2.0', null, 1)).labels).toEqual({ route: 'no_one', judge: 'orrery', pack: 'action.apply' })
     const decided = changeRecord(decidedEvent('r1', digest, at, 2, 'user@example.com', 'no'))
     expect(decided).toMatchObject({ event_key: 'r1.decided.2', actor: { kind: 'person', id: 'user@example.com', email: 'user@example.com' }, action: { verb: 'change.decided', target, outcome: 'ok' }, cause: 'r1.stated', labels: { answer: 'no' } })
     expect(decided.items).toBeUndefined()

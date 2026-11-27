@@ -228,7 +228,7 @@ export function changeRecord(e: ChangeEvent, reason?: string): AnnalsEvent {
       break
     }
     case 'change.routed':
-      event.labels = { route: e.route.to, quorum: String(e.route.to === 'people' ? e.route.quorum : 0), judge: clip(e.judge.name, LABEL_MAX), pack: clip(e.judge.pack, LABEL_MAX) }
+      event.labels = { route: e.route.to, ...(e.route.to === 'people' ? { quorum: String(e.route.quorum) } : {}), judge: clip(e.judge.name, LABEL_MAX), pack: clip(e.judge.pack, LABEL_MAX) }
       break
     case 'change.decided':
       event.actor = person(e.by.id)
