@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { Db, migrations, type Migration } from './db.ts'
+import { concurrentIndex, Db, migrations, type Migration } from './db.ts'
 import { createLogger } from './log.ts'
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://orrery:orrery@localhost:5433/orrery'
@@ -158,6 +158,58 @@ describe('migrations', () => {
       await other.close()
     }
     expect((await db.query("SELECT 1 FROM schema_migrations WHERE id = '9002-test-once'")).rowCount).toBe(1)
+  })
+
+  it('builds an index outside a transaction, and no write to the table waits while it builds', async () => {
+    await db.query('CREATE TABLE migrate_busy (id INT, kind TEXT)')
+    // A writer whose transaction is open as the build starts: the build waits for it, and writes go on beside both.
+    const writer = new pg.Client({ connectionString: url })
+    await writer.connect()
+    await writer.query('BEGIN')
+    await writer.query("INSERT INTO migrate_busy VALUES (1, 'a')")
+    const step: Migration = { id: '9003-test-concurrently', sql: '-- concurrently: a test of a step outside a transaction.\nCREATE INDEX CONCURRENTLY IF NOT EXISTS migrate_busy_kind ON migrate_busy (kind, id DESC);\n' }
+    const migrating = db.migrate(log, [...migrations(), step])
+    try {
+      await sleep(1_000)
+      const wrote = await Promise.race([db.query("INSERT INTO migrate_busy VALUES (2, 'b')").then(() => 'wrote'), sleep(2_000).then(() => 'blocked')])
+      expect(wrote).toBe('wrote')
+    } finally {
+      await writer.query('COMMIT')
+      await writer.end()
+    }
+    await migrating
+    expect((await db.query<{ valid: boolean }>("SELECT indisvalid AS valid FROM pg_index WHERE indexrelid = 'migrate_busy_kind'::regclass")).rows[0]?.valid).toBe(true)
+    expect((await db.query("SELECT 1 FROM schema_migrations WHERE id = '9003-test-concurrently'")).rowCount).toBe(1)
+  })
+
+  it('finishes a concurrent build that stopped half way, rather than passing over the index it left', async () => {
+    await db.query('CREATE TABLE migrate_half (v INT)')
+    await db.query('INSERT INTO migrate_half VALUES (1), (1)')
+    // A unique build over a value held twice fails after the index exists: Postgres keeps it, marked invalid.
+    await expect(db.query('CREATE UNIQUE INDEX CONCURRENTLY migrate_half_v ON migrate_half (v)')).rejects.toThrow()
+    const valid = async () => (await db.query<{ valid: boolean }>("SELECT indisvalid AS valid FROM pg_index WHERE indexrelid = 'migrate_half_v'::regclass")).rows[0]?.valid
+    expect(await valid()).toBe(false)
+    await db.query('DELETE FROM migrate_half')
+    const step: Migration = { id: '9004-test-half', sql: '-- concurrently: a test of a build tried again.\nCREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS migrate_half_v ON migrate_half (v);\n' }
+    await db.migrate(log, [...migrations(), step])
+    expect(await valid()).toBe(true)
+    expect((await db.query("SELECT 1 FROM schema_migrations WHERE id = '9004-test-half'")).rowCount).toBe(1)
+  })
+
+  it('runs outside a transaction only one index built concurrently', () => {
+    expect(concurrentIndex({ id: 'x', sql: 'CREATE INDEX IF NOT EXISTS a ON t (b);' })).toBeNull()
+    expect(concurrentIndex({ id: 'x', sql: '-- concurrently: why.\nCREATE INDEX CONCURRENTLY IF NOT EXISTS a_b ON t (b);' })).toBe('a_b')
+    expect(() => concurrentIndex({ id: 'x', sql: '-- concurrently: why.\nCREATE INDEX CONCURRENTLY a_b ON t (b);' })).toThrow(/IF NOT EXISTS/)
+    expect(() => concurrentIndex({ id: 'x', sql: '-- concurrently: why.\nCREATE INDEX CONCURRENTLY IF NOT EXISTS a_b ON t (b); DROP TABLE t;' })).toThrow()
+    expect(migrations().filter((m) => concurrentIndex(m)).map((m) => m.id)).toContain('0062-changes-kind')
+  })
+
+  it('reads the activity log by a kind it holds few of from that kind alone', async () => {
+    await db.query(`INSERT INTO changes (at, kind, category, outcome, actor_kind, detail) SELECT now(), 'entity.updated', 'estate', 'ok', 'source', '{}' FROM generate_series(1, 20000)`)
+    await db.query('ANALYZE changes')
+    const plan = (await db.query<{ 'QUERY PLAN': string }>(`EXPLAIN SELECT * FROM changes WHERE kind = ANY(ARRAY['icon.removed']) ORDER BY id DESC LIMIT 100`)).rows.map((r) => r['QUERY PLAN']).join('\n')
+    expect(plan).toContain('changes_kind')
+    await db.query(`DELETE FROM changes WHERE kind = 'entity.updated'`)
   })
 
   it('keeps every step after the base one runnable by the release before it', () => {

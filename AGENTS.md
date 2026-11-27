@@ -1105,7 +1105,12 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     a step that drops, renames, or retypes comes a release after the code
     that read the old shape is gone, and says so on a `-- contract:` line.
     Never edit a step that has shipped; add the next one. Never write a step
-    that rewrites a large table.
+    that rewrites a large table. An index on a table the hub writes all the
+    time (the activity log, entities, derived) is its own step, marked
+    `-- concurrently:` on its first line: one `CREATE INDEX CONCURRENTLY IF
+    NOT EXISTS` and nothing else, run outside a transaction (`build` in
+    `db.ts`), which drops and builds again an index a stopped build left
+    invalid.
   - `bridge.ts` is what hubs on one database tell each other, over Postgres
     `LISTEN` and `NOTIFY`. The database itself says when a table a hub loads
     into memory changed (the triggers in `0008-definitions-notify.sql`, by

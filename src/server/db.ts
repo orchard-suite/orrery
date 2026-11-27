@@ -29,12 +29,32 @@ export interface Migration {
   sql: string
 }
 
+/**
+ * A step whose first line is `-- concurrently:` builds one index on a table
+ * the hub writes all the time, outside a transaction, so no write waits for
+ * it while it builds: it is one `CREATE [UNIQUE] INDEX CONCURRENTLY IF NOT
+ * EXISTS` and nothing else. Every other step runs in a transaction of its own.
+ */
+const CONCURRENT_MARK = /^--\s*concurrently:/
+const CONCURRENT_INDEX = /^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+IF\s+NOT\s+EXISTS\s+([a-z_][a-z0-9_]*)\s+ON\s+[^;]+;?\s*$/i
+
+/** The index a step outside a transaction builds, or null for a step that runs in one. Throws on a step marked so that is not one index built concurrently. */
+export function concurrentIndex(m: Migration): string | null {
+  if (!CONCURRENT_MARK.test(m.sql)) return null
+  const code = m.sql.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n')
+  const built = CONCURRENT_INDEX.exec(code)
+  if (!built) throw new Error(`migration ${m.id} runs outside a transaction, so it is one CREATE INDEX CONCURRENTLY IF NOT EXISTS and nothing else`)
+  return built[1]!
+}
+
 /** The migrations in `migrations/`, by file name: `0001-base.sql` before `0002-...`. */
 export function migrations(dir = MIGRATIONS_DIR): Migration[] {
-  return readdirSync(dir)
+  const list = readdirSync(dir)
     .filter((f) => /^\d{4}-[a-z0-9-]+\.sql$/.test(f))
     .sort()
     .map((f) => ({ id: f.replace(/\.sql$/, ''), sql: readFileSync(join(dir, f), 'utf8') }))
+  for (const m of list) concurrentIndex(m)
+  return list
 }
 
 export type Queryable = Pick<pg.PoolClient, 'query'>
@@ -268,6 +288,8 @@ export class Db {
 
 /** Applies one migration and records it, trying again while another hub holds a table it needs. */
 async function apply(client: pg.PoolClient, m: Migration, log: Logger): Promise<void> {
+  const index = concurrentIndex(m)
+  if (index) return build(client, m, index, log)
   for (let attempt = 1; ; attempt++) {
     const started = Date.now()
     try {
@@ -288,5 +310,32 @@ async function apply(client: pg.PoolClient, m: Migration, log: Logger): Promise<
       log.warn('migration waits: a table it needs is in use', { migration: m.id, attempt })
       await sleep(Math.min(attempt, 5) * 1000)
     }
+  }
+}
+
+/**
+ * Builds one index concurrently, outside a transaction, and records the step.
+ * Writes to the table go on while it builds; the build waits for whatever is
+ * under way on the table, with no timeout, since its waiting holds nobody up.
+ * A build that stopped half way, here or on a hub that died, leaves an index
+ * Postgres marks invalid, which `IF NOT EXISTS` would pass over: the next try
+ * drops it, concurrently, and builds it again, so the step is recorded only
+ * with an index that answers.
+ */
+async function build(client: pg.PoolClient, m: Migration, index: string, log: Logger): Promise<void> {
+  const started = Date.now()
+  try {
+    const left = await client.query<{ valid: boolean }>(`SELECT i.indisvalid AS valid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = $1 AND n.nspname = current_schema()`, [index])
+    if (left.rows[0] && !left.rows[0].valid) {
+      log.warn('migration finds the index a build left half done; dropping it to build again', { migration: m.id, index })
+      await client.query(`DROP INDEX CONCURRENTLY IF EXISTS ${index}`)
+    } else if (left.rows[0]) log.info('migration finds its index built already', { migration: m.id, index })
+    else log.debug('migration builds its index', { migration: m.id, index })
+    await client.query(m.sql)
+    await client.query('INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING', [m.id])
+    log.info('migration applied', { migration: m.id, concurrently: true, ms: Date.now() - started })
+  } catch (error) {
+    log.error('migration failed; the next start builds its index again', { migration: m.id, index, concurrently: true, error })
+    throw error
   }
 }
