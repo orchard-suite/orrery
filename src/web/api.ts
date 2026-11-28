@@ -1216,14 +1216,15 @@ export function useChangeSetControl(id: string) {
     retry: useMutation({ mutationFn: () => call<ChangeSetSummary>(`/v1/change-sets/${enc(id)}/retry`, { method: 'POST', body: '{}' }), onSettled: settle }),
   }
 }
-export function useDecideRun(id: string) {
+/** Decides one run. `digest` is the statement's digest the reader was shown, for a run that states a change: an approval binds to it. */
+export function useDecideRun(id: string, digest?: string) {
   const client = useQueryClient()
   const settle = () => {
     void client.invalidateQueries({ queryKey: keys.actionRun(id) })
     void client.invalidateQueries({ queryKey: ['action-runs'] })
   }
   return {
-    approve: useMutation({ mutationFn: (note?: string) => call<ActionRun>(`/v1/action-runs/${enc(id)}/approve`, { method: 'POST', body: JSON.stringify(note ? { note } : {}) }), onSettled: settle }),
+    approve: useMutation({ mutationFn: (note?: string) => call<ActionRun>(`/v1/action-runs/${enc(id)}/approve`, { method: 'POST', body: JSON.stringify({ ...(note ? { note } : {}), ...(digest ? { digest } : {}) }) }), onSettled: settle }),
     decline: useMutation({ mutationFn: (reason: string) => call<ActionRun>(`/v1/action-runs/${enc(id)}/decline`, { method: 'POST', body: JSON.stringify({ reason }) }), onSettled: settle }),
     sendBack: useMutation({ mutationFn: (note: string) => call<ActionRun>(`/v1/action-runs/${enc(id)}/return`, { method: 'POST', body: JSON.stringify({ note }) }), onSettled: settle }),
     withdraw: useMutation({ mutationFn: () => call<ActionRun>(`/v1/action-runs/${enc(id)}/withdraw`, { method: 'POST', body: '{}' }), onSettled: settle }),

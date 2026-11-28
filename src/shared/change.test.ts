@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { checkAction } from './action-spec.ts'
-import { canonical, kindFamily, readObserved, readStatement, statementIssue, statementLines, type ChangeObserved, type ChangeStatement } from './change.ts'
+import { canonical, kindFamily, readJudged, readObserved, readStatement, reasonText, routingLines, statementIssue, statementLines, type ChangeObserved, type ChangeStatement } from './change.ts'
 import { changeInput, INPUT_KINDS, inputText } from './input-kinds.ts'
 
 const EXAMPLES = join(import.meta.dirname, 'change', 'examples')
@@ -167,5 +167,57 @@ describe('the rules the platform kit validator adds to the schema', () => {
     expect(statementIssue(s)).toBeNull()
     // The kit refuses a kind its base set lacks until the estate's kinds are loaded; the hub holds no estate's kinds, so it leaves that to the judge.
     expect(refused((x) => (x.effects![0]!.kind = 'sends'))).toBeNull()
+  })
+})
+
+describe("the judge's answer, held to the platform kit's route rules", () => {
+  const judge = { name: 'trellis', version: '7.0.0', pack: 'gate' }
+  const people = { to: 'people', grants: [{ path: 'owner', field: 'team', values: ['user@example.com'] }], quorum: 1 }
+  const read = (v: Record<string, unknown>) => readJudged({ judge, ...v }, stated)
+
+  it('takes a route of no one, a route to people with its times, and drafts', () => {
+    expect(read({ route: { to: 'no_one' } })).toEqual({ ok: true, routing: { judge, route: { to: 'no_one' } } })
+    const timed = { ...people, quorum: 2, by: '2026-11-28T17:00:00Z', start: '2026-11-28T02:00:00Z' }
+    const draft = { pack: 'gate-next', route: { to: 'no_one' } }
+    expect(read({ route: timed, reasons: [{ effect: 1, proof: 'claimed', rule: 'grants' }, { part: 0, fence: 'unknown' }], drafts: [draft] })).toEqual({ ok: true, routing: { judge, route: timed, reasons: [{ effect: 1, proof: 'claimed', rule: 'grants' }, { part: 0, fence: 'unknown' }], drafts: [draft] } })
+  })
+
+  it('refuses what validateRoute refuses, saying where', () => {
+    const cases: [Record<string, unknown>, string][] = [
+      [{ route: { to: 'no_one', quorum: 1 } }, 'route.quorum must not be here'],
+      [{ route: { to: 'people', grants: [], quorum: 1 } }, 'route.grants must hold at least 1'],
+      [{ route: { to: 'people', grants: people.grants } }, 'route.quorum is required'],
+      [{ route: { ...people, quorum: 0 } }, 'route.quorum must be 1 or more'],
+      [{ route: { to: 'maybe' } }, 'route.to must be one of no_one, people'],
+      [{ route: { ...people, grants: [{ values: [] }] } }, 'route.grants[0].values must hold at least 1'],
+      [{ route: { ...people, grants: [{ field: 'user@example.com', values: ['a'] }] } }, 'route.grants[0].field holds an email address; a person is named only as the actor'],
+      [{ route: { ...people, grants: [{ values: ['eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkw'] }] } }, 'route.grants[0].values[0] holds what reads as a key or a token'],
+      [{ route: { ...people, start: 'tomorrow' } }, 'route.start must be a time, as RFC 3339 writes one'],
+      [{ route: people, reasons: [{}] }, 'reasons[0] must not be empty'],
+      [{ route: people, reasons: [{ fence: 'tired' }] }, 'reasons[0].fence must be one of unknown, asker, judge_down'],
+      [{ route: people, reasons: [{ effect: 0, proof: 'vibes' }] }, 'reasons[0].proof must be one of unknown, claimed, rehearsed, measured'],
+      [{ route: people, reasons: [{ effect: -1 }] }, 'reasons[0].effect must be 0 or more'],
+      [{ route: people, reasons: [{ effect: 2 }] }, 'reasons[0].effect names effect 2, and the statement has 2'],
+      [{ route: people, reasons: [{ part: 1 }] }, 'reasons[0].part names part 1, and the statement has 1'],
+      [{ route: { to: 'no_one' }, reasons: [{ fence: 'unknown' }] }, 'route: a fence sends the change to people, never to no one'],
+      [{ route: people, extra: 1, reasons: [{ rule: 'a', note: 'x' }] }, 'reasons[0].note is not part of a change event'],
+      [{ route: people, drafts: [{ route: { to: 'no_one' } }] }, 'drafts[0].pack is required'],
+      [{ route: people, drafts: [{ pack: 'p', route: { to: 'no_one' }, reasons: [{ fence: 'asker' }] }] }, 'drafts[0].route: a fence sends the change to people, never to no one'],
+    ]
+    for (const [answer, error] of cases) expect(read(answer), JSON.stringify(answer)).toEqual({ ok: false, error })
+    expect(readJudged({ route: { to: 'no_one' } }, stated)).toEqual({ ok: false, error: 'judge is required' })
+    expect(readJudged({ judge: { ...judge, name: 'Trellis' }, route: { to: 'no_one' } }, stated)).toMatchObject({ ok: false, error: expect.stringMatching(/^judge\.name must match/) })
+    expect(readJudged(null, stated)).toEqual({ ok: false, error: 'the answer must be an object' })
+  })
+
+  it('says each reason, and each draft as one, in words', () => {
+    expect(reasonText({ effect: 0, proof: 'measured', rule: 'stops-in-place' }, stated)).toBe('stops workload acme-api-prod, in-place; proof measured; rule stops-in-place')
+    expect(reasonText({ part: 0, fence: 'unknown' }, stated)).toBe('workload acme-api-prod: site_config.cors, which the writer could not name; fence unknown: nobody has proof of what it does')
+    expect(routingLines({ route: { to: 'people', grants: [{ values: ['sec'] }], quorum: 1 }, reasons: [{ fence: 'judge_down' }], drafts: [{ pack: 'next', route: { to: 'no_one' } }] }, stated)).toEqual([
+      'The judge did not answer, so it goes to people.',
+      'Why it is asked:',
+      '- fence judge_down: the judge did not answer',
+      'Draft, not counting yet: pack next would route it to no one. It changes nobody who is asked.',
+    ])
   })
 })

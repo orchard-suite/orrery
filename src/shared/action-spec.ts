@@ -119,6 +119,8 @@ export const actionSchema = z.object({
   inputs: z.record(z.string().regex(NAME), inputSchema).default({}),
   backend: backendSchema,
   approval: z.boolean().optional(),
+  /** true: each run's change statement goes to the estate's judge before the run is queued, and the judge's route adds people to whoever the action already asks. */
+  judge: z.literal(true).optional(),
   selfApproval: z.boolean().optional(),
   confirm: z.boolean().optional(),
   /** false: no form anywhere. Only a tool starts it, on the machine port; its runs and approvals show as any other's. */
@@ -194,6 +196,7 @@ export function checkAction(input: unknown, blueprints?: Pick<Blueprint, 'id' | 
   // A run states at most one change: the change events and the approval read one statement.
   const stating = declared.filter((name) => INPUT_KINDS[spec.inputs[name]!.type]?.shows === 'change')
   for (const name of stating.slice(1)) issues.push({ path: ['inputs', name, 'type'], message: `input "${name}": an action declares at most one change input, and "${stating[0]}" is one` })
+  if (spec.judge && !stating.length) issues.push({ path: ['judge'], message: 'judge: the judge routes a run by the change it states, so the action needs a change input' })
   /** What is wrong with an input that a `when` or a `value` of `name` reads, or null: it reads the inputs declared above it. */
   const misread = (name: string, what: 'when' | 'value', read: string): string | null => {
     if (read === name) return `${what} reads the input itself`
@@ -320,7 +323,7 @@ export function checkAction(input: unknown, blueprints?: Pick<Blueprint, 'id' | 
     if (spec.backend.type !== 'runner') issues.push({ path: ['backend', 'type'], message: 'tool: a tool runs on a runner, which holds the identity it runs as' })
     // Who may call a tool is whoever holds its tier, so it takes no rule, no approval, and no form of its own.
     // A dataset is the one tool with access of its own: who may read it in a query, beside whoever holds its tier.
-    for (const key of ['access', 'approval', 'selfApproval', 'confirm', 'sections', 'walk'] as const) if (spec[key] !== undefined && !(key === 'access' && spec.dataset)) issues.push({ path: [key], message: `tool: a tool has no ${key}; whoever holds its tier on the entity may call it` })
+    for (const key of ['access', 'approval', 'judge', 'selfApproval', 'confirm', 'sections', 'walk'] as const) if (spec[key] !== undefined && !(key === 'access' && spec.dataset)) issues.push({ path: [key], message: `tool: a tool has no ${key}; whoever holds its tier on the entity may call it` })
     if (spec.form) issues.push({ path: ['form'], message: 'tool: a tool has no form' })
     if (spec.serial && spec.tool.tier !== 'act') issues.push({ path: ['serial'], message: 'serial: only a tool that acts runs one at a time' })
   }
@@ -361,6 +364,7 @@ export function checkAction(input: unknown, blueprints?: Pick<Blueprint, 'id' | 
     // The answer is given to one person as they ask, so the run must be that person's own request and one of one.
     if (!spec.backend.onBehalf) issues.push({ path: ['backend', 'finish'], message: 'backend: an answer that is revealed goes to the person who asked, in their own request, so the call is made as them: name a delegate in onBehalf' })
     if (spec.batch) issues.push({ path: ['batch'], message: 'batch: an answer that is revealed is given once, to one request, so the action has no batch' })
+    if (spec.judge) issues.push({ path: ['judge'], message: 'judge: an answer that is revealed is given to the request that asks for the run, so the run cannot wait for the people a route names' })
     if (spec.approval || (spec.access?.rules ?? []).some((r) => r.approval)) issues.push({ path: ['approval'], message: 'approval: an answer that is revealed is given to the request that asks for the run, so the run cannot wait for approval' })
   }
   if (spec.backend.type === 'webhook' && spec.backend.method === 'GET' && spec.backend.body !== undefined) issues.push({ path: ['backend', 'body'], message: 'backend: a GET carries no body' })

@@ -29,7 +29,7 @@ import type { Logger } from './log.ts'
 import { fetchTimed, recordAnnals } from './metrics.ts'
 import { eventOfRow } from './change-events.ts'
 import { markOf, moveMark, settledCeiling } from './log-mark.ts'
-import type { ChangeEvent, ChangeStatement } from '../shared/change.ts'
+import type { ChangeEvent, ChangeReason, ChangeStatement } from '../shared/change.ts'
 
 export interface AnnalsConfig {
   /** Annals' API port, such as http://annals-api.annals.svc:8081. */
@@ -256,7 +256,7 @@ export function changeRecord(e: ChangeEvent, reason?: string): AnnalsEvent {
       break
     }
     case 'change.routed':
-      event.labels = { route: e.route.to, ...(e.route.to === 'people' ? { quorum: String(e.route.quorum) } : {}), judge: clip(e.judge.name, LABEL_MAX), pack: clip(e.judge.pack, LABEL_MAX) }
+      event.labels = { route: e.route.to, ...(e.route.to === 'people' ? { quorum: String(e.route.quorum) } : {}), ...(e.judge ? { judge: clip(e.judge.name, LABEL_MAX), pack: clip(e.judge.pack, LABEL_MAX) } : {}), ...fencesOf(e.reasons) }
       break
     case 'change.decided':
       event.actor = person(e.by.id)
@@ -269,6 +269,12 @@ export function changeRecord(e: ChangeEvent, reason?: string): AnnalsEvent {
       break
   }
   return event
+}
+
+/** The fences a route names, as one label: absent when none sent the change to people. */
+function fencesOf(reasons: ChangeReason[] | undefined): { fences?: string } {
+  const fences = [...new Set((reasons ?? []).flatMap((r) => (r.fence ? [r.fence] : [])))]
+  return fences.length ? { fences: fences.join(',') } : {}
 }
 
 /** Who stated a change: a person by their address, an agent or a system by its name, with whoever it acts for. */

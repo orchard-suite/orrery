@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ChangeStatement } from '../shared/change.ts'
-import { checkOf, digestOf, endedEvent, outcomeOf, routedEvent, statedEvent } from './change-events.ts'
+import { checkOf, digestOf, endedEvent, outcomeOf, routedEvent, routingOf, statedEvent } from './change-events.ts'
 
 const EXAMPLES = join(import.meta.dirname, '..', 'shared', 'change', 'examples')
 const example = JSON.parse(readFileSync(join(EXAMPLES, 'event-stated.json'), 'utf8')) as { digest: string; statement: ChangeStatement }
@@ -28,9 +28,30 @@ describe('the events of a stated change', () => {
   it('are keyed by the run, and each later one names the stated one', () => {
     const stated = statedEvent('run1', example.statement, example.digest, at)
     expect(stated).toEqual({ event: 'change.stated', sender: 'orrery', key: 'run1.stated', at: '2026-11-26T20:01:04.000Z', digest: example.digest, statement: example.statement })
-    const routed = routedEvent({ id: 'run1', action: 'apply' }, example.digest, at, '2.2.0', [{ values: ['user@example.com'] }], 2)
+    const routed = routedEvent({ id: 'run1' }, example.digest, at, routingOf('apply', '2.2.0', null, [{ values: ['user@example.com'] }], 2))
     expect(routed).toMatchObject({ key: 'run1.routed', of: { sender: 'orrery', key: 'run1.stated' }, judge: { name: 'orrery', version: '2.2.0', pack: 'action.apply' }, route: { to: 'people', grants: [{ values: ['user@example.com'] }], quorum: 2 }, reasons: [{ rule: 'action-approval' }] })
-    expect(routedEvent({ id: 'run1', action: 'apply' }, example.digest, at, '2.2.0', null, 1).route).toEqual({ to: 'no_one' })
+    expect(routedEvent({ id: 'run1' }, example.digest, at, routingOf('apply', '2.2.0', null, null, 1)).route).toEqual({ to: 'no_one' })
+  })
+})
+
+describe('a route the judge gave', () => {
+  const judge = { name: 'trellis', version: '7.0.0', pack: 'gate' }
+  it('adds the action\'s own approvers after the route\'s, with the larger quorum and the route\'s times', () => {
+    const answer = { judge, route: { to: 'people' as const, grants: [{ values: ['sec'] }], quorum: 2, by: '2026-11-28T17:00:00Z', start: '2026-11-28T02:00:00Z' }, reasons: [{ effect: 0, rule: 'r' }] }
+    expect(routingOf('apply', '2.2.0', { answer, fences: [], asks: { grants: [{ values: ['sec'] }], need: 2 }, own: true }, [{ values: ['lead'] }], 1)).toEqual({
+      judge,
+      route: { to: 'people', grants: [{ values: ['sec'] }, { values: ['lead'] }], quorum: 2, by: '2026-11-28T17:00:00Z', start: '2026-11-28T02:00:00Z' },
+      reasons: [{ effect: 0, rule: 'r' }, { rule: 'action-approval' }],
+    })
+  })
+
+  it('goes to no one only when neither the route nor the action asks anyone, and keeps its drafts', () => {
+    const drafts = [{ pack: 'next', route: { to: 'people' as const, grants: [{ values: ['sec'] }], quorum: 1 } }]
+    expect(routingOf('apply', '2.2.0', { answer: { judge, route: { to: 'no_one' }, drafts }, fences: [], asks: null, own: false }, null, 1)).toEqual({ judge, route: { to: 'no_one' }, drafts })
+  })
+
+  it('names no judge when it gave no answer, and goes to people by its fence', () => {
+    expect(routingOf('apply', '2.2.0', { answer: null, fences: [{ fence: 'judge_down' }], asks: null, own: false }, [{ values: ['lead'] }], 1)).toEqual({ route: { to: 'people', grants: [{ values: ['lead'] }], quorum: 1 }, reasons: [{ fence: 'judge_down' }] })
   })
 })
 

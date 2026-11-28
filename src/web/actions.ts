@@ -5,8 +5,8 @@
 import type { ActionsResponse, ServerEvent } from '../shared/api.ts'
 import { askedInputs, formSections } from '../shared/asked.ts'
 import { inputText, kindOf } from '../shared/input-kinds.ts'
-import { ACTION_ICON, entityId, isFinished, type Action, type Home, type ActionInputDef, type ActionRun, type ActionStats, type Blueprint, type Entity, type Pin } from '../shared/model.ts'
-import { duration, exact, short } from './format.ts'
+import { ACTION_ICON, entityId, isFinished, owedOf, owedWords, type Action, type Home, type ActionInputDef, type ActionRun, type ActionStats, type Blueprint, type Entity, type Pin } from '../shared/model.ts'
+import { duration, exact, short, when } from './format.ts'
 import { stepTimes } from './runlog.ts'
 
 /** An action as a page holds it: its definition, and what a current hub says beside it. */
@@ -82,8 +82,10 @@ export function recent(runs: ActionRun[], most = RECENT): ActionRun[] {
 }
 
 /** On whom a run that has not started waits, or null for one that has. `action` is the run's, when the reader has it. */
-export function waits(r: Pick<ActionRun, 'state' | 'by' | 'approvalsNeeded' | 'approvedBy'>, action: Pick<Action, 'backend'> | undefined, me: string): string | null {
+export function waits(r: Pick<ActionRun, 'state' | 'by' | 'approvalsNeeded' | 'approvedBy'> & Partial<Pick<ActionRun, 'routeAsks' | 'retryAt' | 'attempt'>>, action: Pick<Action, 'backend'> | undefined, me: string): string | null {
+  if (r.state === 'awaiting' && r.routeAsks) return `Waits for approval: ${owedWords(owedOf(r))}`
   if (r.state === 'awaiting') return (r.approvalsNeeded ?? 1) > 1 ? `Waits for approval: ${(r.approvedBy ?? []).length} of ${r.approvalsNeeded}` : 'Waits for approval'
+  if (r.state === 'queued' && r.retryAt && (r.attempt ?? 1) === 1) return `Starts no earlier than ${when(r.retryAt)}, as its route says`
   if (r.state !== 'queued') return null
   if (action?.backend.type === 'caller') return r.by === me ? 'Waits for you to start it' : 'Waits for whoever asked to start it'
   if (action?.backend.type === 'runner') return `Queued for ${action.backend.runner}`

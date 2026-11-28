@@ -36,7 +36,7 @@ import type { Reader } from './read.ts'
 import type { Blueprints } from './blueprints.ts'
 import { fetchTimed } from './metrics.ts'
 import { attachedInputs, changeInput } from '../shared/input-kinds.ts'
-import { applierText, statementLines, type ChangeStatement } from '../shared/change.ts'
+import { applierText, CHANGE_SENDER, routingLines, statementLines, type ChangeStatement } from '../shared/change.ts'
 import { markOf, moveMark, settledCeiling } from './log-mark.ts'
 import { outputText } from '../shared/run-marks.ts'
 import { parseEntityId, REPORT_BLUEPRINT, type ActionRun } from '../shared/model.ts'
@@ -375,7 +375,8 @@ export class NoticeForwarder {
       ]
     }
     // Whoever is asked to approve a change reads what it states, not its JSON.
-    if (kind === 'action.awaiting_approval' && statement) event.text = statementLines(statement).join('\n').slice(0, 4000)
+    // A run the judge routed says why it is asked as well; the hub's own route says nothing the run's deciders do not.
+    if (kind === 'action.awaiting_approval' && statement) event.text = [...statementLines(statement), ...(run.routed && run.routed.judge?.name !== CHANGE_SENDER ? routingLines(run.routed, statement) : [])].join('\n').slice(0, 4000)
     if (finished === 'failed' || finished === 'unknown') event.severity = 'warning'
     if (finished && run.summary) event.text = run.summary.slice(0, 4000)
     if (kind === 'action.declined' && typeof row.detail.reason === 'string' && row.detail.reason) event.text = `Why: ${row.detail.reason}`

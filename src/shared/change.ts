@@ -76,12 +76,53 @@ export interface ChangeGrant {
   values: string[]
 }
 
-export type ChangeStated = ChangeHeader<'change.stated'> & { statement: ChangeStatement }
-export type ChangeRouted = ChangeHeader<'change.routed'> & {
-  judge: { name: string; version: string; pack: string }
-  route: { to: 'no_one' } | { to: 'people'; grants: ChangeGrant[]; quorum: number }
-  reasons: { rule: string }[]
+/** The fences that send a change to people whatever a route says: a part nobody has proof for, a change applied where it was asked, and a judge that did not answer. */
+export const FENCES = ['unknown', 'asker', 'judge_down'] as const
+export type ChangeFence = (typeof FENCES)[number]
+
+/** How well the judge knows an effect is safe, least first. */
+export const PROOFS = ['unknown', 'claimed', 'rehearsed', 'measured'] as const
+export type ChangeProof = (typeof PROOFS)[number]
+
+/**
+ * The judge's answer: no one, or the people who may decide, how many must
+ * agree, by when the decision is due, and the earliest the change may start.
+ */
+export type ChangeRoute = { to: 'no_one' } | { to: 'people'; grants: ChangeGrant[]; quorum: number; by?: string; start?: string }
+
+/** Why a route came: an effect of the statement (by index), a part it could not name (by index), a fence, or a rule about the whole change, with the proof the judge held. */
+export interface ChangeReason {
+  effect?: number
+  part?: number
+  fence?: ChangeFence
+  rule?: string
+  proof?: ChangeProof
 }
+
+/** What a pack that does not count yet would have answered. It is kept and shown, and never changes who is asked. */
+export interface ChangeDraft {
+  pack: string
+  route: ChangeRoute
+  reasons?: ChangeReason[]
+}
+
+/** Who judged a change: the judge's name, its version, and the pack it judged with. */
+export interface ChangeJudge {
+  name: string
+  version: string
+  pack: string
+}
+
+/** A change's route as a run keeps it and its change.routed event says it. `judge` is absent only when the judge did not answer. */
+export interface ChangeRouting {
+  judge?: ChangeJudge
+  route: ChangeRoute
+  reasons?: ChangeReason[]
+  drafts?: ChangeDraft[]
+}
+
+export type ChangeStated = ChangeHeader<'change.stated'> & { statement: ChangeStatement }
+export type ChangeRouted = ChangeHeader<'change.routed'> & ChangeRouting
 export type ChangeDecided = ChangeHeader<'change.decided'> & { by: { kind: 'person'; id: string }; answer: 'yes' | 'no' }
 export type ChangeEnded = ChangeHeader<'change.ended'> & {
   outcome: 'ok' | 'failed' | 'refused'
@@ -399,6 +440,77 @@ export function readObserved(value: unknown): { ok: true; event: ChangeObserved 
   return wrong ? { ok: false, error: wrong } : { ok: true, event: value as ChangeObserved }
 }
 
+// The judge's answer --------------------------------------------------------------
+
+const ROUTED = (DOCS['event.json']!.$defs!.routed as NodeObject).properties!
+
+/** What the platform kit's validator (`validateRoute`) refuses in a route and its reasons the schema takes, or null. An index names a part of the statement judged. */
+function routeIssue(at: string, route: ChangeRoute, reasons: ChangeReason[], s: ChangeStatement): string | null {
+  if (route.to === 'people')
+    for (const [i, g] of route.grants.entries()) {
+      const wrong = plainIssue(`${at}.grants[${i}].path`, g.path) ?? plainIssue(`${at}.grants[${i}].field`, g.field)
+      if (wrong) return wrong
+      // A grant's values name people, so an address may stand there and nothing that reads as a value.
+      for (const [j, v] of g.values.entries()) {
+        const value = valueIn(`${at}.grants[${i}].values[${j}]`, v)
+        if (value) return value
+      }
+    }
+  for (const [i, r] of reasons.entries()) {
+    const wrong = plainIssue(`reasons[${i}].rule`, r.rule)
+    if (wrong) return wrong
+    if (r.effect !== undefined && r.effect >= (s.effects ?? []).length) return `reasons[${i}].effect names effect ${r.effect}, and the statement has ${(s.effects ?? []).length}`
+    if (r.part !== undefined && r.part >= (s.unknown ?? []).length) return `reasons[${i}].part names part ${r.part}, and the statement has ${(s.unknown ?? []).length}`
+  }
+  if (route.to === 'no_one' && reasons.some((r) => r.fence)) return `${at}: a fence sends the change to people, never to no one`
+  return null
+}
+
+/**
+ * The judge's answer for one statement, or why it is not one: its judge, its
+ * route, its reasons, and its drafts, each read against the platform kit's
+ * event schema for a routed event and held to the rules its validator adds
+ * to a route. Anything else the answer holds is passed over. An answer that
+ * is not one is no answer: the run goes to people, by the `judge_down` fence.
+ */
+export function readJudged(value: unknown, statement: ChangeStatement): { ok: true; routing: ChangeRouting & { judge: ChangeJudge } } | { ok: false; error: string } {
+  if (!isObject(value)) return { ok: false, error: 'the answer must be an object' }
+  if (value.judge === undefined) return { ok: false, error: 'judge is required' }
+  if (value.route === undefined) return { ok: false, error: 'route is required' }
+  for (const k of ['judge', 'route', 'reasons', 'drafts'] as const) {
+    if (value[k] === undefined) continue
+    const wrong = breaks(ROUTED[k]!, value[k], k, EVENT_READING)
+    if (wrong) return { ok: false, error: wrong }
+  }
+  const judge = value.judge as ChangeJudge
+  const named = plainIssue('judge.version', judge.version) ?? plainIssue('judge.pack', judge.pack)
+  if (named) return { ok: false, error: named }
+  const route = value.route as ChangeRoute
+  const reasons = (value.reasons as ChangeReason[] | undefined) ?? []
+  const drafts = (value.drafts as ChangeDraft[] | undefined) ?? []
+  const wrong = routeIssue('route', route, reasons, statement)
+  if (wrong) return { ok: false, error: wrong }
+  for (const [i, d] of drafts.entries()) {
+    const draft = plainIssue(`drafts[${i}].pack`, d.pack) ?? routeIssue(`drafts[${i}].route`, d.route, d.reasons ?? [], statement)
+    if (draft) return { ok: false, error: draft }
+  }
+  return { ok: true, routing: { judge, route, ...(reasons.length ? { reasons } : {}), ...(drafts.length ? { drafts } : {}) } }
+}
+
+/**
+ * What the platform kit refuses in a change event the hub sends, or null: its
+ * event schema, and for a routed event the rules its validator adds to the
+ * route, given the statement the event is about. A routed event with no
+ * judge goes to people, by the `judge_down` fence.
+ */
+export function sentIssue(value: unknown, statement: ChangeStatement): string | null {
+  const wrong = breaks(DOCS['event.json']!, value, '', EVENT_READING)
+  if (wrong || !isObject(value) || value.event !== 'change.routed') return wrong
+  const e = value as unknown as ChangeRouted
+  if (!e.judge && (e.route.to !== 'people' || !(e.reasons ?? []).some((r) => r.fence === 'judge_down'))) return 'a route with no judge goes to people, by the judge_down fence'
+  return routeIssue('route', e.route, e.reasons ?? [], statement) ?? (e.drafts ?? []).map((d, i) => routeIssue(`drafts[${i}].route`, d.route, d.reasons ?? [], statement)).find(Boolean) ?? null
+}
+
 // The digest ----------------------------------------------------------------------
 
 /** Every empty list, empty object, empty string, and null left out, deep; undefined when nothing is left. */
@@ -456,6 +568,34 @@ export function effectText(e: ChangeEffect): string {
 /** One part the writer could not name an effect for, in words. */
 export function unknownText(u: ChangeUnknown): string {
   return `${u.thing ? `${refText(u.thing)}: ` : ''}${u.part}, ${u.why === 'unread' ? 'which the writer could not read' : 'which the writer read and has no effect for'}`
+}
+
+const FENCE_TEXT: Record<ChangeFence, string> = { unknown: 'nobody has proof of what it does', asker: 'it is applied on the machine that asked, so no one may pass it alone', judge_down: 'the judge did not answer' }
+
+/** Why a route came, in words: the effect or the part it is about, the proof the judge held, the fence, and the rule. */
+export function reasonText(r: ChangeReason, s: ChangeStatement): string {
+  const effect = r.effect !== undefined ? s.effects?.[r.effect] : undefined
+  const part = r.part !== undefined ? s.unknown?.[r.part] : undefined
+  const about = effect ? `${effect.kind} ${refText(effect.subject)}, ${effect.path}` : part ? `${part.thing ? `${refText(part.thing)}: ` : ''}${part.part}, which the writer could not name` : null
+  return [about, r.proof && `proof ${r.proof}`, r.fence && `fence ${r.fence}: ${FENCE_TEXT[r.fence]}`, r.rule && `rule ${r.rule}`].filter(Boolean).join('; ')
+}
+
+/** A route in words: to no one, or to the people it names, how many, by when, and from when. */
+export function routeText(route: ChangeRoute): string {
+  if (route.to === 'no_one') return 'no one: it is queued at once'
+  const who = route.grants.map((g) => `${g.values.join(', ')}${g.field ? ` (${g.path ? `${g.path}.` : ''}${g.field})` : ''}`).join('; ')
+  return [`people: ${who}`, `${route.quorum} must agree`, route.by && `due by ${route.by}`, route.start && `not before ${route.start}`].filter(Boolean).join('; ')
+}
+
+/** Why a run of a change is asked, as plain lines for a notice: who judged it, each reason, by when and from when, and each draft as one. Who it names is the notice's to say. */
+export function routingLines(r: ChangeRouting, s: ChangeStatement): string[] {
+  const lines = [r.judge ? `Judged by ${r.judge.name} ${r.judge.version}, pack ${r.judge.pack}.` : 'The judge did not answer, so it goes to people.']
+  const reasons = r.reasons ?? []
+  if (reasons.length) lines.push('Why it is asked:', ...reasons.map((x) => `- ${reasonText(x, s)}`))
+  if (r.route.to === 'people' && r.route.by) lines.push(`Decide by ${r.route.by}.`)
+  if (r.route.to === 'people' && r.route.start) lines.push(`It starts no earlier than ${r.route.start}.`)
+  for (const d of r.drafts ?? []) lines.push(`Draft, not counting yet: pack ${d.pack} would route it to ${d.route.to === 'no_one' ? 'no one' : 'people'}. It changes nobody who is asked.`)
+  return lines
 }
 
 /** Who asks for the change, in words. */

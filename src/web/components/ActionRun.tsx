@@ -6,9 +6,9 @@ import { Check, ChevronRight, CircleDot, Circle, CircleHelp, Hourglass, Minus, R
 import { useState, type ReactNode } from 'react'
 import { changeInput, kindOf } from '../../shared/input-kinds.ts'
 import type { ChangeStatement } from '../../shared/change.ts'
-import { ChangeStatementView } from './ChangeStatement.tsx'
+import { ChangeStatementView, RouteView } from './ChangeStatement.tsx'
 import { runChanges } from '../../shared/list-change.ts'
-import { entityId, isFinished, type Action, type ActionInputDef, type ActionRun, type ActionRunState } from '../../shared/model.ts'
+import { entityId, isFinished, owedOf, owedWords, type Action, type ActionInputDef, type ActionRun, type ActionRunState } from '../../shared/model.ts'
 import { happened, iconOf, inputShown, named, outputsOf, ranInputs, targetOf, waits, wroteBackOf } from '../actions.ts'
 import { RUNS_PAGE, runImageUrl, useActionRun, useActionRuns, useActions, useApprovals, useCan, useDecideRun, useScheduleApprovals, useSetApprovals, useViewingAs, useWhoAmI } from '../api.ts'
 import { ago, day, duration, when } from '../format.ts'
@@ -220,6 +220,7 @@ export function ActionRunPage({ id }: { id: string }) {
         </Panel>
       )}
       {statement && <ChangeStatementView statement={statement} digest={r.statementDigest} waiting={r.state === 'awaiting'} />}
+      {statement && r.routed && <RouteView routing={r.routed} statement={statement} />}
       {r.decidedBy && (r.state === 'returned' || r.note) && <DecisionNote run={r} />}
       {r.state === 'awaiting' && !r.changeSet && <Decide run={r} />}
       {r.state === 'queued' && !r.changeSet && <Withdraw run={r} />}
@@ -274,9 +275,10 @@ export function ActionRunPage({ id }: { id: string }) {
 
 export const STATE_WORD: Record<ActionRunState, string> = { awaiting: 'waiting for approval', queued: 'queued', running: 'running', succeeded: 'succeeded', failed: 'failed', unknown: 'outcome unknown', declined: 'declined', cancelled: 'cancelled', returned: 'sent back' }
 
-/** A run's state in a word, with the try it is on past its first: a run waiting for its next try is retrying, not merely queued. */
+/** A run's state in a word, with the try it is on past its first: a run waiting for its next try is retrying, and one waiting for the start its route names starts later, not merely queued. */
 export function StateBadge({ run, large = false }: { run: Pick<ActionRun, 'state'> & Partial<Pick<ActionRun, 'attempt' | 'retryAt'>>; large?: boolean }) {
-  const word = run.retryAt && run.state === 'queued' ? 'retrying' : STATE_WORD[run.state]
+  // A run held before its first try waits for the start its route names; one held after a failed try is retrying.
+  const word = run.retryAt && run.state === 'queued' ? ((run.attempt ?? 1) > 1 ? 'retrying' : 'starts later') : STATE_WORD[run.state]
   return (
     <Badge className={`border-ink-600 ${large ? 'px-2 py-0.5 text-[12px]' : ''}`}>
       <span className={RUN_STATE[run.state]}>{word}</span>
@@ -464,7 +466,7 @@ function DecisionNote({ run }: { run: ActionRun }) {
 function Decide({ run }: { run: ActionRun }) {
   const viewing = useViewingAs()
   const me = useWhoAmI()
-  const decide = useDecideRun(run.id)
+  const decide = useDecideRun(run.id, run.statementDigest)
   const [note, setNote] = useState('')
   const own = me.data?.identity.name === run.by
   const canApprove = !!run.canDecide && !viewing
@@ -473,9 +475,15 @@ function Decide({ run }: { run: ActionRun }) {
   const busy = decide.approve.isPending || decide.decline.isPending || decide.sendBack.isPending
   return (
     <Panel className="space-y-3 border-amber/40 px-4 py-3">
-      {need > 1 && (
+      {need > 1 && !run.routeAsks && (
         <p className="text-sm font-medium text-ink-50" aria-live="polite">
           {given.length} of {need} approvals{given.length ? `: ${given.map((g) => g.by).join(', ')}` : ''}. It starts when {need} different people have approved; a decline from anyone ends it.
+        </p>
+      )}
+      {run.routeAsks && (
+        <p className="text-sm font-medium text-ink-50" aria-live="polite">
+          {need > 0 ? `Its action asks ${need} approval${need > 1 ? 's' : ''}, and its route asks ${run.routeAsks.need} more from the people it names.` : `Its route asks ${run.routeAsks.need} approval${run.routeAsks.need > 1 ? 's' : ''} from the people it names.`} It waits for {owedWords(owedOf(run))}
+          {given.length ? `; approved so far by ${given.map((g) => g.by).join(', ')}` : ''}. A decline from anyone ends it.
         </p>
       )}
       <div className="text-sm text-ink-100">{waitsWords(run, own, canApprove)}</div>
@@ -571,7 +579,7 @@ function Stop({ run }: { run: ActionRun }) {
 
 /** Approve or decline one run from the list of those waiting, without opening it. A reason for declining is given on its page, and so is the note that sends it back. */
 export function RowDecide({ run, what }: { run: ActionRun; what: string }) {
-  const decide = useDecideRun(run.id)
+  const decide = useDecideRun(run.id, run.statementDigest)
   return <DecideButtons what={what} busy={decide.approve.isPending || decide.decline.isPending} error={decide.approve.error ?? decide.decline.error} onApprove={() => decide.approve.mutate()} onDecline={() => decide.decline.mutate('')} />
 }
 

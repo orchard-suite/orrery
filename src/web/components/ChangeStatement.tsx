@@ -1,9 +1,12 @@
 // The change a run states, for whoever approves it: what runs where, each
 // effect on each live thing, and each part the writer could not name an
-// effect for. It reads the statement the hub checked and kept on the run.
+// effect for. It reads the statement the hub checked and kept on the run,
+// and the route the run was given: who judged it, why it is asked, by when,
+// from when, and what packs not counting yet would have answered.
 
-import { actorText, applierText, refText, type ChangeEffect, type ChangeStatement } from '../../shared/change.ts'
-import { CopyButton, Kicker, Panel } from './ui.tsx'
+import { actorText, applierText, reasonText, refText, routeText, type ChangeEffect, type ChangeReason, type ChangeRouting, type ChangeStatement } from '../../shared/change.ts'
+import { when } from '../format.ts'
+import { Badge, CopyButton, Kicker, Panel } from './ui.tsx'
 
 const UNDO: Record<ChangeEffect['undo'], string> = { yes: 'Yes', no: 'No', partial: 'In part' }
 const CLAIM: Record<ChangeEffect['claim']['from'], string> = { writer: 'The writer', estate: 'The estate', model: 'A model' }
@@ -93,6 +96,65 @@ export function ChangeStatementView({ statement: s, digest, waiting }: { stateme
           </ul>
         </section>
       )}
+    </Panel>
+  )
+}
+
+/** Why a route came, one reason to a line: the effect or the part it is about, with the proof, the fence, and the rule. */
+function Reasons({ reasons, statement }: { reasons: ChangeReason[]; statement: ChangeStatement }) {
+  if (!reasons.length) return <p className="text-sm text-ink-300">It gives no reason.</p>
+  return (
+    <ul className="space-y-1 text-sm">
+      {reasons.map((r, i) => (
+        <li key={i} className={`break-words ${r.fence ? 'text-amber' : 'text-ink-100'}`}>
+          {reasonText(r, statement)}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** The route a run of a stated change was given, as its change.routed event says it. A draft is shown as one, and never as who is asked. */
+export function RouteView({ routing, statement }: { routing: ChangeRouting; statement: ChangeStatement }) {
+  const route = routing.route
+  const drafts = routing.drafts ?? []
+  return (
+    <Panel>
+      <h2 className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-ink-800 px-4 py-2">
+        <Kicker>Why it is asked</Kicker>
+        <span className="text-[12px] text-ink-300">{routing.judge ? `judged by ${routing.judge.name} ${routing.judge.version}, pack ${routing.judge.pack}` : 'the judge did not answer'}</span>
+      </h2>
+      <dl className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-2 px-4 py-3 text-sm sm:grid-cols-[auto_minmax(0,1fr)]">
+        <dt className="text-ink-300">Route</dt>
+        <dd className="break-words text-ink-100">{routeText(route)}</dd>
+        {route.to === 'people' && route.by && (
+          <>
+            <dt className="text-ink-300">Decide by</dt>
+            <dd className="text-ink-100">{when(route.by)}</dd>
+          </>
+        )}
+        {route.to === 'people' && route.start && (
+          <>
+            <dt className="text-ink-300">Starts no earlier than</dt>
+            <dd className="text-ink-100">{when(route.start)}</dd>
+          </>
+        )}
+      </dl>
+      <section aria-label="Reasons" className="border-t border-ink-800 px-4 py-3">
+        <h3 className="mb-1.5 text-sm text-ink-300">Reasons</h3>
+        <Reasons reasons={routing.reasons ?? []} statement={statement} />
+      </section>
+      {drafts.map((d, i) => (
+        <section key={i} aria-label={`Draft ${d.pack}`} className="border-t border-ink-800 px-4 py-3">
+          <h3 className="mb-1.5 flex flex-wrap items-center gap-2 text-sm text-ink-300">
+            <Badge className="border-ink-600 text-ink-300">draft</Badge>
+            <span>
+              Pack {d.pack}, not counting yet, would route to {routeText(d.route)}. It changes nobody who is asked.
+            </span>
+          </h3>
+          <Reasons reasons={d.reasons ?? []} statement={statement} />
+        </section>
+      ))}
     </Panel>
   )
 }

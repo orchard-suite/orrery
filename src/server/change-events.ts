@@ -3,13 +3,15 @@
 // reaches a final state. Each is the platform kit's event shape, kept in the
 // `detail.event` of the activity row written with the change that made it, so
 // the Annals forwarder carries it as it carries every other row, and the
-// change event forwarder carries each one to the dispatch desk. Until the
-// estate's judge answers for actions, the hub judges the route itself: a run
-// that waits for approval goes to people, any other to no one.
+// change event forwarder carries each one to the dispatch desk. A run of an
+// action that opts in to the estate's judge is routed as the judge answers,
+// with the action's own approval kept beside it; any other is routed by the
+// hub itself: a run that waits for approval goes to people, any other to no
+// one.
 
 import { createHash } from 'node:crypto'
-import { canonical, CHANGE_CHECKS, CHANGE_EVENTS, CHANGE_SENDER, CHECK_OUTPUT, DIFFERS_OUTPUT, STATEMENT_FIELDS, type ChangeCheck, type ChangeDecided, type ChangeEnded, type ChangeEvent, type ChangeGrant, type ChangeRouted, type ChangeStated, type ChangeStatement } from '../shared/change.ts'
-import type { ActionRunState } from '../shared/model.ts'
+import { canonical, CHANGE_CHECKS, CHANGE_EVENTS, CHANGE_SENDER, CHECK_OUTPUT, DIFFERS_OUTPUT, STATEMENT_FIELDS, type ChangeCheck, type ChangeDecided, type ChangeEnded, type ChangeEvent, type ChangeGrant, type ChangeJudge, type ChangeReason, type ChangeRouted, type ChangeRouting, type ChangeStated, type ChangeStatement } from '../shared/change.ts'
+import type { ActionRunState, RouteAsks } from '../shared/model.ts'
 import type { OutputValue } from '../shared/run-marks.ts'
 
 /** The statement's identity: `sha256:` and the hex of SHA-256 over its canonical form, as the platform kit takes it. */
@@ -37,22 +39,55 @@ export function statedEvent(run: string, statement: ChangeStatement, digest: str
 }
 
 /**
- * The route the hub judged, by the action's approval: to the people the run
- * waits on, named as Orrery names approvers, with the run's quorum, or to no
- * one for a run that starts at once.
+ * How the judge routed a run of an action that opts in to it: its answer, or
+ * null when it gave none; the fences the hub holds beside the answer, each a
+ * reason that sent the run to people; what the route asks beside the
+ * action's own approval; and whether the action's own approval holds the
+ * run as well.
  */
-export function routedEvent(run: { id: string; action: string }, digest: string, at: Date, version: string, waitsOn: ChangeGrant[] | null, quorum: number): ChangeRouted {
-  const grants = (waitsOn ?? [])
+export interface JudgedRoute {
+  answer: (ChangeRouting & { judge: ChangeJudge }) | null
+  fences: ChangeReason[]
+  asks: RouteAsks | null
+  own: boolean
+}
+
+/** Grants as the contract holds them: at most `GRANTS_MAX`, each naming 1 to `VALUES_MAX` people. */
+function clipped(grants: ChangeGrant[]): ChangeGrant[] {
+  return grants
     .map((g) => ({ ...g, values: g.values.slice(0, VALUES_MAX) }))
     .filter((g) => g.values.length)
     .slice(0, GRANTS_MAX)
+}
+
+/**
+ * A run's route as its change.routed event says it. `waitsOn` names who the
+ * action's own approval waits on, or is null when it waits on no one, and
+ * `quorum` is how many of them must agree. With no judge (`judged` null) the
+ * hub is the judge, by the action's approval. A run the judge routed is to
+ * people when its route asks for people or the action's own approval does:
+ * the route's grants first, then the action's, the larger of the two
+ * quorums, and the route's due and start times. Its reasons are the judge's,
+ * then the fences, then the action's own approval when it holds the run.
+ * The judge is absent only when it gave no answer.
+ */
+export function routingOf(action: string, version: string, judged: JudgedRoute | null, waitsOn: ChangeGrant[] | null, quorum: number): ChangeRouting {
+  if (!judged) return { judge: { name: CHANGE_SENDER, version, pack: `action.${action}` }, route: waitsOn ? { to: 'people', grants: clipped(waitsOn), quorum: Math.max(1, quorum) } : { to: 'no_one' }, reasons: [{ rule: HUB_RULE }] }
+  const answer = judged.answer
+  const said = answer?.route.to === 'people' ? answer.route : null
+  const people = !!judged.asks || !!waitsOn
+  const reasons = [...(answer?.reasons ?? []), ...judged.fences, ...(judged.own && waitsOn ? [{ rule: HUB_RULE }] : [])]
   return {
-    event: 'change.routed',
-    ...after(run.id, digest, `${run.id}.routed`, at),
-    judge: { name: CHANGE_SENDER, version, pack: `action.${run.action}` },
-    route: waitsOn ? { to: 'people', grants, quorum: Math.max(1, quorum) } : { to: 'no_one' },
-    reasons: [{ rule: HUB_RULE }],
+    ...(answer ? { judge: answer.judge } : {}),
+    route: people ? { to: 'people', grants: clipped([...(judged.asks?.grants ?? []), ...(waitsOn ?? [])]), quorum: Math.max(1, judged.asks?.need ?? 0, waitsOn ? quorum : 0), ...(said?.by ? { by: said.by } : {}), ...(said?.start ? { start: said.start } : {}) } : { to: 'no_one' },
+    ...(reasons.length ? { reasons } : {}),
+    ...(answer?.drafts?.length ? { drafts: answer.drafts } : {}),
   }
+}
+
+/** A run's change.routed event: its route, as `routingOf` works it out. */
+export function routedEvent(run: { id: string }, digest: string, at: Date, routing: ChangeRouting): ChangeRouted {
+  return { event: 'change.routed', ...after(run.id, digest, `${run.id}.routed`, at), ...routing }
 }
 
 /** One yes or no, the `n`th answer the run was given, counting from 1. */

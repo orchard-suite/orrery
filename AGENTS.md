@@ -35,7 +35,8 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
   what a ground says of a blueprint's entities, worked out the same on
   either side), the change statement (`change.ts`: its check against the
   platform kit's schema and the rules its validator adds, its canonical
-  form, and how it reads in words; the schema, the base effect kinds, and
+  form, how it reads in words, and the judge's answer read against the
+  kit's route rules (`readJudged`); the schema, the base effect kinds, and
   the worked examples in `change/` are copies of the platform
   kit's at the version `go.mod` requires, held to it byte for byte by
   `change/pinned_test.go`, so they move only by copying them again when that
@@ -409,6 +410,26 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     kit's shape in the row's `detail.event`; the Annals forwarder and the
     change event forwarder read it there and nowhere else, and the desk
     hears of a change from those events alone. Never write one for a run that states nothing.
+    Whether a run waits is settled in one place, `judge` in `actions.ts`,
+    which ends in `route`: for an action with `judge: true` it asks the
+    estate's judge (`judge.ts`, `POST <JUDGE_URL>/v1/judge`, bounded by
+    `JUDGE_TIMEOUT_MS`; `readJudged` in `src/shared/change.ts` holds the
+    answer to the kit's route rules, and an answer that breaks them is no
+    answer) and lays the route on what the action and its rules already
+    ask. The judge only adds: a route of no one leaves the run as the action
+    left it, a route to people asks its grants as well (`routeAsks` on the
+    run), and no answer, a change applied where it was asked, or a part with
+    no proof sends the run to people as `approval: true` would, each a fence
+    on its route. Never let a route remove an approval the action or its
+    rules ask, and never ask the judge anywhere else. `routingOf` in
+    `change-events.ts` is the one reading of the route a run takes, kept on
+    the run (`routed`) and sent as its `change.routed` event; a draft is
+    kept and shown and never asks anyone. A yes counts for the action's own
+    approval, the route, or both (`counts`, `owedOf` in
+    `src/shared/model.ts`), and keeps the statement's digest it was given
+    for; an approve call that names another digest is refused. A run its
+    route names a `start` for is queued for then with `retry_at`, and
+    `start` refuses it before then.
     `dispatch-changes.ts` carries every one of them to the desk at
     `DISPATCH_URL` (`POST /v1/change-events`) from a mark of its own
     (`log-mark.ts`, which every forwarder of the log keeps its place with),

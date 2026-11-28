@@ -3,6 +3,7 @@
 // come from. Both the server and the web app import this file.
 
 import { INPUT_KINDS, kindOf, type InputKindName, type InputRules } from './input-kinds.ts'
+import type { ChangeRouting } from './change.ts'
 import type { OutputValue, RunLine, RunStep } from './run-marks.ts'
 
 export const FIELD_TYPES = ['string', 'number', 'boolean', 'datetime', 'enum', 'url', 'markdown', 'object', 'array', 'email', 'user', 'healthcheck', 'secretRef', 'openapi', 'trend'] as const
@@ -1586,6 +1587,16 @@ export interface Action {
   /** The run waits until someone other than the requester approves it. */
   approval?: boolean
   /**
+   * True: each run's change statement (its `change` input) goes to the
+   * estate's judge before the run is queued, and the run takes the judge's
+   * route. The route only adds: the run still waits for whoever `approval`
+   * and the access rules ask, and a route to people asks its grants as
+   * well. A route of no one queues the run at once only when those ask
+   * no one. A run with no statement, or that the judge does not answer, goes
+   * to people as `approval: true` would send it.
+   */
+  judge?: true
+  /**
    * The person who asked may approve their own run, when they may approve it
    * at all. The run still says who asked and who approved. For an estate with
    * one approver; turn it off once there is a second.
@@ -1799,6 +1810,37 @@ export function isFinished(state: ActionRunState): boolean {
 /** Whose approval a run waits for: its asker's alone, or someone else's. */
 export type HeldFor = 'self' | 'others'
 
+/** What a run's route asks beside the action's own approval: the grants that let a decider in, and how many of them must agree. */
+export interface RouteAsks {
+  grants: AccessGrant[]
+  need: number
+}
+
+/** What one yes counts for: the action's own approval (its `approval`, its rules, its tiers, the approvers a product named), or what its route asks. */
+export type ApprovalPart = 'action' | 'route'
+
+/** What a run awaiting approval still waits for: how many more yeses for the action's own approval, and how many more for its route. A yes kept before the hub said what it counts for counts for the action. */
+export function owedOf(run: Pick<ActionRun, 'approvalsNeeded' | 'approvedBy' | 'routeAsks'>): Record<ApprovalPart, number> {
+  const given = run.approvedBy ?? []
+  const forAction = given.filter((a) => !a.for || a.for.includes('action')).length
+  const forRoute = given.filter((a) => a.for?.includes('route')).length
+  return { action: Math.max(0, (run.approvalsNeeded ?? 1) - forAction), route: run.routeAsks ? Math.max(0, run.routeAsks.need - forRoute) : 0 }
+}
+
+/** What a run still waits for, in words. */
+export function owedWords(owed: Record<ApprovalPart, number>): string {
+  const parts = [owed.action > 0 && `${owed.action} more for the action's own approval`, owed.route > 0 && `${owed.route} more from the people its route names`].filter(Boolean)
+  return parts.length ? parts.join(' and ') : 'no more'
+}
+
+/** One yes a run was given: who, when, the digest of the statement they approved, and what it counts for. A yes kept before the hub said what it counts for counts for the action. */
+export interface Approval {
+  by: string
+  at: string
+  digest?: string
+  for?: ApprovalPart[]
+}
+
 export interface ActionRun {
   id: string
   action: string
@@ -1841,10 +1883,21 @@ export interface ActionRun {
   tiers: ToolTier[]
   /** The run this one asks again for, after that one was sent back. */
   revises: string | null
-  /** How many people must approve it before it starts: one unless its action has a `quorum`. A hub one release back sends none, which reads as one. */
+  /**
+   * How many people the action's own approval asks to approve it before it starts: one unless its action has a `quorum`,
+   * and none for a run only its route holds. A hub one release back sends none, which reads as one.
+   */
   approvalsNeeded?: number
   /** Who has approved it so far, in order, while it waits for the rest. */
-  approvedBy?: { by: string; at: string }[]
+  approvedBy?: Approval[]
+  /**
+   * Its change's route, as its `change.routed` event says it: the judge (absent when the judge did not answer), the
+   * route, why it came (each effect, part, fence, and rule, with the proof held), and what packs not counting yet would
+   * have answered. Absent for a run that states no change; a hub one release back sends none.
+   */
+  routed?: ChangeRouting
+  /** What its route asks beside the action's own approval, for a run of an action the judge routes to people. Null otherwise. */
+  routeAsks?: RouteAsks | null
   /** The batch it was asked in, when it was one of many asked at once. */
   batch?: string | null
   /** The change set it was asked in, which is decided as one; a hub one release back sends none. */

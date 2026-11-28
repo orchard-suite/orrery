@@ -88,6 +88,17 @@ describe('what a run waits on', () => {
     expect(waits(run({ state: 'awaiting' }), action(), 'user@example.com')).toBe('Waits for approval')
   })
 
+  it('is what the route and the action still ask, for a run the judge routed to people', () => {
+    const routed = run({ state: 'awaiting', approvalsNeeded: 1, routeAsks: { grants: [{ values: ['sec'] }], need: 2 }, approvedBy: [{ by: 'lead', at: '2026-01-05T15:01:00Z', for: ['action'] }] })
+    expect(waits(routed, action(), 'user@example.com')).toBe('Waits for approval: 2 more from the people its route names')
+    expect(waits({ ...routed, approvedBy: [] }, action(), 'user@example.com')).toBe("Waits for approval: 1 more for the action's own approval and 2 more from the people its route names")
+  })
+
+  it('is the start its route names, for an approved run held until then', () => {
+    expect(waits(run({ state: 'queued', retryAt: '2026-01-06T02:00:00Z' }), caller, 'user@example.com')).toMatch(/^Starts no earlier than .+, as its route says$/)
+    expect(waits(run({ state: 'queued', retryAt: '2026-01-06T02:00:00Z', attempt: 2 }), caller, 'user@example.com')).toBe('Waits for you to start it')
+  })
+
   it('is the person who asked, for a run they start themselves', () => {
     expect(waits(run({ state: 'queued' }), caller, 'user@example.com')).toBe('Waits for you to start it')
     expect(waits(run({ state: 'queued' }), caller, 'approver@example.com')).toBe('Waits for whoever asked to start it')

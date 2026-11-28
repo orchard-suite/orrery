@@ -1903,8 +1903,9 @@ export function createApp(deps: HttpDeps): Hono<AppEnv> {
   // Who decides a run is the run's to say (`mayDecide` in actions.ts): a holder of actions.approve, or someone a rule trusts there without approval.
   app.post('/v1/action-runs/:id/approve', allow(null, 'action.approved', { deep: true }), async (c) => {
     await seenRun(c, c.req.param('id'))
-    const { note } = z.object({ note: z.string().max(4000).optional() }).safeParse(await c.req.json().catch(() => ({}))).data ?? {}
-    return c.json(await actions.approve(c.req.param('id'), c.get('identity'), await viewOf(c), note))
+    // A run that states a change is approved for the statement the approver was shown: its digest, when the caller sends it.
+    const { note, digest } = z.object({ note: z.string().max(4000).optional(), digest: z.string().regex(/^sha256:[0-9a-f]{64}$/).optional() }).safeParse(await c.req.json().catch(() => ({}))).data ?? {}
+    return c.json(await actions.approve(c.req.param('id'), c.get('identity'), await viewOf(c), note, undefined, digest))
   })
   app.post('/v1/action-runs/:id/decline', allow(null, 'action.declined', { deep: true }), async (c) => {
     await seenRun(c, c.req.param('id'))

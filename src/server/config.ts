@@ -133,6 +133,12 @@ const schema = z.object({
   DISPATCH_APPROVERS_GROUP: z.string().regex(/^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$/).optional(),
   /** Hours a run may wait for approval before its deciders are told once more. 0 never tells them again. */
   DISPATCH_REMIND_HOURS: z.coerce.number().min(0).default(24),
+  /**
+   * The estate's judge (Trellis), by its address on the cluster network: an action with `judge: true` sends each run's
+   * change statement to `POST <JUDGE_URL>/v1/judge` before the run is queued, with no credential. Unset, or with no
+   * answer within three seconds, such a run goes to people.
+   */
+  JUDGE_URL: z.string().url().optional(),
   /** The dispatch desk's address for people. Set, the web app's profile menu links to the page where a person says how they are told. */
   DISPATCH_PUBLIC_URL: z.string().url().optional(),
   /**

@@ -63,6 +63,7 @@ import { Conventions } from './conventions.ts'
 import { FieldHistory } from './history.ts'
 import { BROWSER_EVENTS, CHANGE_EVENTS, HUB_EVENTS } from '../shared/usage.ts'
 import { observeFields, observeHub, observeRunners, seedCounts, timeQueries, timed } from './metrics.ts'
+import { changeJudge } from './judge.ts'
 
 export interface Hub {
   app: Hono<AppEnv>
@@ -124,7 +125,7 @@ export interface Hub {
   close(): Promise<void>
 }
 
-export async function createHub(config: Config, version: string, opts: { reset?: boolean; idTokens?: IdTokenVerifier } = {}): Promise<Hub> {
+export async function createHub(config: Config, version: string, opts: { reset?: boolean; idTokens?: IdTokenVerifier; judgeFetch?: typeof fetch } = {}): Promise<Hub> {
   const log = createLogger('orrery')
   const dataDir = resolve(config.DATA_DIR)
   const dbLog = createLogger('db')
@@ -234,7 +235,7 @@ export async function createHub(config: Config, version: string, opts: { reset?:
   const behalf = new Behalf(delegates, behalfIdentity, secrets)
   // Everyone who signs in, as the hub judges each now. With no sign-in, every request is the local admin, so a run asked as them acts as them.
   const people = (): Identity[] => [...(config.AUTH_MODE === 'none' ? [LOCAL] : []), ...access.listUsers().map((u) => identityOf(u, access))]
-  const actions = new Actions({ identityFor: (email) => people().find((p) => p.name === email) ?? null, db, blueprints, reader, sources, checks, events, viewOf, person: () => visibility.personSetting()?.blueprint ?? null, mayRun: (identity, action) => visibility.mayRun(identity, action), grantsLetIn: (address, grants) => visibility.grantsLetIn(address, grants), gate: (identity, action) => visibility.gate(identity, action), owned: (who) => visibility.ownedKept(who), asker: async (who) => { const ref = who.kind === 'user' ? await visibility.personOf(who.name) : null; const zone = (who.kind === 'user' ? (await preferences.of(who.name)).timeZone : null) ?? 'UTC'; return { address: who.name, person: ref ? entityId(ref) : null, times: askerTimes(new Date(), zone) } }, entities, decides: (blueprint, names) => visibility.refusesRecordWrite(blueprint, names), pinned: async (identity) => (identity.kind === 'user' ? new Set((await pins.of(identity.name)).flatMap((p) => (p.kind === 'action' ? [p.id] : []))) : null), people: () => access.listUsers().map((u) => { const judged = identityOf({ ...u, admin: false }, access); return { ...judged, permissions: judged.permissions.filter((p) => p !== 'actions.approve') } }), deciding: async () => [...people(), ...(await sources.listTokens()).filter((t) => t.kind === 'access').map((t) => accessTokenIdentity(t, access))], seenBy: (identity) => visibility.view(identity), log: createLogger('actions'), publicUrl: config.PUBLIC_URL, githubApi: config.GITHUB_API_URL, behalf, timeoutMinutes: config.ACTION_TIMEOUT_MINUTES, version })
+  const actions = new Actions({ identityFor: (email) => people().find((p) => p.name === email) ?? null, db, blueprints, reader, sources, checks, events, viewOf, person: () => visibility.personSetting()?.blueprint ?? null, mayRun: (identity, action) => visibility.mayRun(identity, action), grantsLetIn: (address, grants) => visibility.grantsLetIn(address, grants), gate: (identity, action) => visibility.gate(identity, action), owned: (who) => visibility.ownedKept(who), asker: async (who) => { const ref = who.kind === 'user' ? await visibility.personOf(who.name) : null; const zone = (who.kind === 'user' ? (await preferences.of(who.name)).timeZone : null) ?? 'UTC'; return { address: who.name, person: ref ? entityId(ref) : null, times: askerTimes(new Date(), zone) } }, entities, decides: (blueprint, names) => visibility.refusesRecordWrite(blueprint, names), pinned: async (identity) => (identity.kind === 'user' ? new Set((await pins.of(identity.name)).flatMap((p) => (p.kind === 'action' ? [p.id] : []))) : null), people: () => access.listUsers().map((u) => { const judged = identityOf({ ...u, admin: false }, access); return { ...judged, permissions: judged.permissions.filter((p) => p !== 'actions.approve') } }), deciding: async () => [...people(), ...(await sources.listTokens()).filter((t) => t.kind === 'access').map((t) => accessTokenIdentity(t, access))], seenBy: (identity) => visibility.view(identity), log: createLogger('actions'), publicUrl: config.PUBLIC_URL, githubApi: config.GITHUB_API_URL, behalf, timeoutMinutes: config.ACTION_TIMEOUT_MINUTES, judge: changeJudge(config.JUDGE_URL, createLogger('judge'), opts.judgeFetch), version })
   await actions.load()
   await actions.ensureBuiltins(HUB_ACTIONS)
   visibility.attach(actions)

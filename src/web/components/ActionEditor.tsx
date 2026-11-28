@@ -44,6 +44,12 @@ backend:
 type Path = (string | number)[]
 type Raw = Record<string, unknown>
 
+/** Whether a draft declares a change input, which a judge routes runs by. */
+function statesChange(raw: Raw): boolean {
+  const inputs = raw.inputs
+  return !!inputs && typeof inputs === 'object' && Object.values(inputs).some((i) => !!i && typeof i === 'object' && (i as { type?: unknown }).type === 'change')
+}
+
 /** The tests a `when` may make of an input: every test but the ones that read the time, and the one that takes a list. */
 const WHEN_OPS: readonly GridClause['op'][] = ['exists', 'eq', 'neq', 'contains', 'prefix', 'gt', 'gte', 'lt', 'lte']
 
@@ -302,6 +308,7 @@ function SpecForm({ raw, fixedId, blueprints, groups, admin, people, set, change
       <Section title="Before it runs">
         <Check label="Someone else approves each run" hint="The run waits until a person who holds the approve permission, and did not ask, approves it." checked={raw.approval === true} onChange={(v) => set(['approval'], v)} />
         {raw.approval === true && <Check label="The person who asked may approve it too" hint="For an estate with one approver. The run still shows who asked and who approved. Turn it off once a second person approves." checked={raw.selfApproval === true} onChange={(v) => set(['selfApproval'], v)} error={issueAt(['selfApproval'])} />}
+        {(raw.judge === true || statesChange(raw)) && <Check label="The judge routes each run" hint="Each run's change statement goes to the estate's judge before it is queued. Its route only adds people to whoever this action already asks: a route of no one starts the run at once only when the action and its rules ask no one. With no answer from the judge, the run goes to people." checked={raw.judge === true} onChange={(v) => set(['judge'], v || undefined)} error={issueAt(['judge'])} />}
         <Check label="Ask for a check first" hint="The form shows the person everything they filled in before it is sent. For an action that is hard to undo." checked={raw.confirm === true} onChange={(v) => set(['confirm'], v)} />
         <Check label="Run only from its rows" hint="No tile on the Self-service page: people run it from a row, an entity's page, or a tick of several, such as approving a record in an inbox." checked={raw.listed === false} onChange={(v) => set(['listed'], v ? false : undefined)} error={issueAt(['listed'])} />
         <Check label="Only its tool starts it" hint="No form, no Run button, and nothing an agent is offered: a tool asks for runs on the machine port, such as a CLI that applies infrastructure. Its runs and approvals show as usual." checked={raw.form === false} onChange={(v) => set(['form'], v ? false : undefined)} />
@@ -962,7 +969,7 @@ export function Reference() {
           <b className="text-ink-100">Templates</b>: any string may hold <code>{'{{ entity.fields.x }}'}</code>, <code>{'{{ inputs.y }}'}</code>, <code>{'{{ run.id }}'}</code>, <code>{'{{ by.name }}'}</code>, <code>{'{{ by.address }}'}</code>.
         </li>
         <li>
-          <b className="text-ink-100">Before it runs</b>: <code>approval: true</code> waits for someone else to approve, and <code>selfApproval: true</code> lets the person who asked approve too; <code>confirm: true</code> shows the person what they filled in first; <code>form: false</code> leaves the action no form, so only its tool starts it; <code>serial: [input, …]</code> makes runs on the same entity with the same values of those inputs one line: a newer request replaces one not started yet, and only one runs at a time. <code>concurrency: n</code> lets at most <code>n</code> runs of the action be in flight at once, on any entity and across every batch: the rest wait their turn, oldest first, and nothing is replaced.
+          <b className="text-ink-100">Before it runs</b>: <code>approval: true</code> waits for someone else to approve, and <code>selfApproval: true</code> lets the person who asked approve too; <code>judge: true</code> sends each run's change statement to the estate's judge, whose route adds people to whoever the action already asks; <code>confirm: true</code> shows the person what they filled in first; <code>form: false</code> leaves the action no form, so only its tool starts it; <code>serial: [input, …]</code> makes runs on the same entity with the same values of those inputs one line: a newer request replaces one not started yet, and only one runs at a time. <code>concurrency: n</code> lets at most <code>n</code> runs of the action be in flight at once, on any entity and across every batch: the rest wait their turn, oldest first, and nothing is replaced.
         </li>
         <li>
           <b className="text-ink-100">Tool</b>: <code>tool: {'{ tier: read }'}</code> makes it a command an agent calls and reads the answer of, with no form and no approval. Its tier is <code>read</code>, <code>data</code>, or <code>act</code>, its backend is a runner whose own rule serves that tier, and whoever holds the tier on the entity may call it. Only an admin, git, or a source its runner names defines one.

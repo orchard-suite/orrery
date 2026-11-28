@@ -10,13 +10,14 @@ import type { GridClause, ActionReport, ActionTargetsResponse, RunActionRequest,
 import { checkAction, jobTemplate, narrowedBy, narrowValue, templateReads, unbatchable, type ActionSpec } from '../shared/action-spec.ts'
 import { isAsked, workedOut } from '../shared/asked.ts'
 import { changeInput, countError, INPUT_KINDS, inputEmpty, listOf, twiceIn, withoutAttached } from '../shared/input-kinds.ts'
-import type { ChangeGrant, ChangeStatement } from '../shared/change.ts'
+import type { ChangeGrant, ChangeReason, ChangeRouting, ChangeStatement } from '../shared/change.ts'
 import { changes, editsList, heldList, runChanges } from '../shared/list-change.ts'
-import { ACTION_ICON, JOB_CEILING, RESERVED_PREFIX, SCHEDULE_BLUEPRINT, namesSelf, TOOL_TIERS, actionTargets, can, entityId, isFinished, narrowingInputs, parseDuration, retryWait, type BatchWidth, parseEntityId, entityIdFor, inputPicks, type Action, type ActionBackend, type Home, type ActionInputDef, type ActionRun, type ActionRunState, type HeldFor, type AccessGrant, type ActionOrigin, type ActionStats, type ActionRule, type ActionTool, type ActionView, type Entity, type EntityRef, type Filter, type Identity, type InputUnique, type Outcome, type Source, type ToolTier, type WroteBack } from '../shared/model.ts'
+import { ACTION_ICON, JOB_CEILING, RESERVED_PREFIX, SCHEDULE_BLUEPRINT, namesSelf, TOOL_TIERS, actionTargets, can, entityId, isFinished, narrowingInputs, parseDuration, retryWait, type BatchWidth, parseEntityId, entityIdFor, inputPicks, type Action, type ActionBackend, type Home, type ActionInputDef, type ActionRun, type ActionRunState, type HeldFor, type AccessGrant, type Approval, type ApprovalPart, type RouteAsks, owedOf, owedWords, type ActionOrigin, type ActionStats, type ActionRule, type ActionTool, type ActionView, type Entity, type EntityRef, type Filter, type Identity, type InputUnique, type Outcome, type Source, type ToolTier, type WroteBack } from '../shared/model.ts'
 import { OUTPUTS_MAX, isImageOutput, readLines, type OutputValue, type RunLine, type RunStep } from '../shared/run-marks.ts'
 import { pathsOf, render, scopeEntity, type Scope } from '../shared/template.ts'
 import { record } from './activity.ts'
-import { checkOf, decidedEvent, digestOf, endedEvent, outcomeOf, routedEvent, statedEvent } from './change-events.ts'
+import { checkOf, decidedEvent, digestOf, endedEvent, outcomeOf, routedEvent, routingOf, statedEvent, type JudgedRoute } from './change-events.ts'
+import type { ChangeJudgeClient } from './judge.ts'
 import { recordActionRun, type RunnerReading } from './metrics.ts'
 import { approvalOf } from './approvals.ts'
 import type { Blueprints } from './blueprints.ts'
@@ -237,7 +238,7 @@ interface RunRow {
   revises: string | null
   note: string | null
   approvals_needed: number
-  approved_by: { by: string; at: string }[]
+  approved_by: Approval[]
   held_for: HeldFor | null
   approvers: AccessGrant[] | null
   requested_for: string | null
@@ -257,6 +258,10 @@ interface RunRow {
   statement_digest: string | null
   /** When its change.ended event was written: once, whatever ends the run. */
   change_ended_at: Date | null
+  /** Its change's route, as its change.routed event says it; null for a run that states no change. */
+  routed: ChangeRouting | null
+  /** What its route asks beside the action's own approval; null when it asks nothing more. */
+  route_asks: RouteAsks | null
 }
 
 /** What a change to a run replaces on its row. */
@@ -335,6 +340,8 @@ export interface ActionsDeps {
   deciding: () => Promise<Identity[]>
   /** What an identity may see. */
   seenBy: (identity: Identity) => Promise<View>
+  /** The estate's judge, asked the route of each run of an action that opts in to it (`judge: true`). */
+  judge: ChangeJudgeClient
   /** The hub's own version, which names it as the judge of a change it routes itself. */
   version: string
 }
@@ -350,6 +357,10 @@ export interface JudgedRun {
   differs: { input: string; filled: unknown; sent: unknown }[]
   waits: boolean
   selfHeld: boolean
+  /** How many yeses the action's own approval asks: none for a run only its route holds. */
+  needed: number
+  /** How the judge routed it, for a run of an action that opts in to the judge and states a change; null otherwise. */
+  judged: JudgedRoute | null
   tiers: ToolTier[]
   requestedFor: string | null
   approvers: AccessGrant[] | null
@@ -368,15 +379,14 @@ export interface SetControl {
 /** Where an activity row is written: the pool, or the transaction the change it records is made in. */
 type Recorder = Parameters<typeof record>[0]
 
-/** A change statement a run is asked with: the statement, its digest, and the route the hub judged. `waitsOn` is null for a run that starts at once. */
+/** A change statement a run is asked with: the statement, its digest, and its route as its change.routed event says it. */
 interface Stated {
   statement: ChangeStatement
   digest: string
-  waitsOn: ChangeGrant[] | null
-  quorum: number
+  routing: ChangeRouting
 }
 
-type Waiting = Pick<ActionRun, 'id' | 'action' | 'entity' | 'by' | 'state' | 'approvedBy' | 'approvalsNeeded' | 'requestedFor' | 'approvers' | 'heldFor' | 'tiers' | 'changeSet'>
+type Waiting = Pick<ActionRun, 'id' | 'action' | 'entity' | 'by' | 'state' | 'approvedBy' | 'approvalsNeeded' | 'requestedFor' | 'approvers' | 'heldFor' | 'tiers' | 'changeSet' | 'routeAsks'>
 
 /** A URL with the rendered query added to it, each value encoded. A value that rendered to nothing is left out, so an input nobody filled changes nothing. */
 function withQuery(url: string, query: Record<string, unknown>): string {
@@ -1071,7 +1081,7 @@ export class Actions {
    * action's rules: its tier was the check.
    */
   private async ask(action: Action, body: RunActionRequest, identity: Identity, view: View | undefined, how: { through?: string; tool?: boolean; address?: string }): Promise<ActionRun> {
-    const { entity, inputs, kept, listed, differs, tiers, requestedFor, approvers, revisedRun, runId, requestedAt, scope, waits, selfHeld } = await this.judge(action, body, identity, view, how)
+    const { entity, inputs, kept, listed, differs, tiers, requestedFor, approvers, revisedRun, runId, requestedAt, scope, waits, selfHeld, needed: asks, judged } = await this.judge(action, body, identity, view, how)
     const revises = revisedRun?.id ?? null
     // A run of the line not started yet that asked for exactly this, by the same person, is the answer: asking again does not ask twice.
     const unstarted = action.serial ? await this.inLine(action, entity, inputs, ['awaiting', 'queued']) : []
@@ -1086,9 +1096,11 @@ export class Actions {
     // A rule that says self holds the run for its asker's own yes; a tier it asks for is granted only by someone who holds it, so that run waits for others.
     // Approvers a product named decide it instead, and never its asker.
     const held: HeldFor | null = !waits ? null : selfHeld && !tiers.length && !approvers ? 'self' : 'others'
-    const waiting: Waiting = { id: runId, action: action.id, entity: entity ? { blueprint: entity.blueprint, key: entity.key } : null, by: identity.name, state: 'awaiting', approvedBy: [], approvalsNeeded: needed(action), requestedFor, approvers, heldFor: held, tiers }
-    if (waits) {
-      const decider = await this.undecided(waiting, await this.deps.deciding())
+    const routeAsks = judged?.asks ?? null
+    const waiting: Waiting = { id: runId, action: action.id, entity: entity ? { blueprint: entity.blueprint, key: entity.key } : null, by: identity.name, state: 'awaiting', approvedBy: [], approvalsNeeded: asks, requestedFor, approvers, heldFor: held, tiers, routeAsks }
+    // What the route asks waits for the people it names, however few of them have signed in yet; the action's own approval must have someone who could give it.
+    if (waits && asks > 0) {
+      const decider = await this.undecided({ ...waiting, routeAsks: null }, await this.deps.deciding())
       if ('why' in decider) {
         this.deps.log.warn('action run refused: nobody could approve it', { action: action.id, by: identity.name, entity: entity?.id ?? null, reason: decider.why })
         throw new ActionError(decider.why, 409)
@@ -1098,10 +1110,10 @@ export class Actions {
     const who = `${how.through ? `${identity.name} through ${how.through}` : identity.name}${requestedFor ? ` for ${requestedFor}` : ''}`
     const requested = { at: requestedAt.toISOString(), message: waits ? `requested by ${who}; waiting for approval${madeAsPerson(action) ? '; it runs as whoever approves it' : ''}` : `requested by ${who}` }
     const noted = differs.map((d) => ({ at: requestedAt.toISOString(), message: `input "${d.input}" differs from what the hub filled in for whoever asked: ${asText(d.filled)} filled in, ${asText(d.sent)} sent` }))
-    const stated = await this.statementOf(action, inputs, waits ? waiting : null)
+    const stated = await this.statementOf(action, inputs, waits ? waiting : null, judged)
     // The run, the row that says it was asked, and its change events are written together: what was stated is never lost to a run that failed to be written, nor the run to its events.
     await this.deps.db.tx(async (client) => {
-      await client.query('INSERT INTO action_runs (id, action, blueprint, key, inputs, actor, state, log, created_at, tiers, revises, approvals_needed, held_for, approvers, requested_for, by_address, current, statement_digest) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)', [
+      await client.query('INSERT INTO action_runs (id, action, blueprint, key, inputs, actor, state, log, created_at, tiers, revises, approvals_needed, held_for, approvers, requested_for, by_address, current, statement_digest, routed, route_asks) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)', [
         runId,
         action.id,
         entity?.blueprint ?? null,
@@ -1113,13 +1125,15 @@ export class Actions {
         requestedAt,
         JSON.stringify(tiers),
         revises,
-        waits ? needed(action) : 1,
+        asks,
         held,
         approvers ? JSON.stringify(approvers) : null,
         requestedFor,
         how.address ?? null,
         listed.length ? JSON.stringify(kept) : null,
         stated?.digest ?? null,
+        stated ? JSON.stringify(stated.routing) : null,
+        stated && routeAsks ? JSON.stringify(routeAsks) : null,
       ])
       // The row says who really called, the tier a tool reached with, and what the run asked to be granted, each only when there is one.
       const told = { ...(how.through ? { via: how.through } : {}), ...(requestedFor ? { requestedFor } : {}), ...(action.tool ? { tool: action.tool.tier } : {}), ...(tiers.length ? { tiers } : {}), ...(revises ? { revises } : {}), ...(differs.length ? { differs: differs.map((d) => d.input) } : {}), ...(listed.length ? { current: kept } : {}) }
@@ -1236,7 +1250,9 @@ export class Actions {
         throw new ActionError(wrong.message, 400, wrong.input)
       }
     }
-    return { action, entity, inputs, kept, listed, differs, waits, selfHeld, tiers, requestedFor, approvers, revisedRun, runId, requestedAt, scope }
+    // The one place whether a run waits is settled: what the action and its rules ask, with the judge's route added for an action that opts in.
+    const routed = await this.route(action, inputs, runId, waits, selfHeld)
+    return { action, entity, inputs, kept, listed, differs, ...routed, tiers, requestedFor, approvers, revisedRun, runId, requestedAt, scope }
   }
 
   /**
@@ -1496,7 +1512,7 @@ export class Actions {
 
   /** A judged item as the run it would be, waiting in its set. */
   private setWaiting(set: string, i: JudgedRun, identity: Identity, held: HeldFor): Waiting {
-    return { id: i.runId, action: i.action.id, entity: i.entity ? { blueprint: i.entity.blueprint, key: i.entity.key } : null, by: identity.name, state: 'awaiting', approvedBy: [], approvalsNeeded: needed(i.action), requestedFor: null, approvers: null, heldFor: held, tiers: [], changeSet: set }
+    return { id: i.runId, action: i.action.id, entity: i.entity ? { blueprint: i.entity.blueprint, key: i.entity.key } : null, by: identity.name, state: 'awaiting', approvedBy: [], approvalsNeeded: setNeed(i), requestedFor: null, approvers: null, heldFor: held, tiers: [], changeSet: set, routeAsks: i.judged?.asks ?? null }
   }
 
   /**
@@ -1508,12 +1524,12 @@ export class Actions {
     const who = through ? `${identity.name} through ${through}` : identity.name
     // Each run of a set waits for the set's one decision, so each that states a change is routed to the people who decide it in the set.
     const stated: (Stated | null)[] = []
-    for (const i of items) stated.push(await this.statementOf(i.action, i.inputs, this.setWaiting(set, i, identity, held), set))
+    for (const i of items) stated.push(await this.statementOf(i.action, i.inputs, this.setWaiting(set, i, identity, held), i.judged, set))
     for (const [index, i] of items.entries()) {
       const at = i.requestedAt.toISOString()
       const requested = { at, message: `requested by ${who} in change set ${set}; waiting for its approval${madeAsPerson(i.action) ? '; it runs as whoever approves it' : ''}` }
       const noted = i.differs.map((d) => ({ at, message: `input "${d.input}" differs from what the hub filled in for whoever asked: ${asText(d.filled)} filled in, ${asText(d.sent)} sent` }))
-      await client.query('INSERT INTO action_runs (id, action, blueprint, key, inputs, actor, state, log, created_at, tiers, approvals_needed, held_for, current, change_set, set_index, statement_digest) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)', [
+      await client.query('INSERT INTO action_runs (id, action, blueprint, key, inputs, actor, state, log, created_at, tiers, approvals_needed, held_for, current, change_set, set_index, statement_digest, routed, route_asks) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)', [
         i.runId,
         i.action.id,
         i.entity?.blueprint ?? null,
@@ -1524,12 +1540,14 @@ export class Actions {
         JSON.stringify([requested, ...noted]),
         i.requestedAt,
         '[]',
-        needed(i.action),
+        setNeed(i),
         held,
         i.listed.length ? JSON.stringify(i.kept) : null,
         set,
         index,
         stated[index]?.digest ?? null,
+        stated[index] ? JSON.stringify(stated[index].routing) : null,
+        stated[index] && i.judged?.asks ? JSON.stringify(i.judged.asks) : null,
       ])
       const told = { ...(through ? { via: through } : {}), ...(i.differs.length ? { differs: i.differs.map((d) => d.input) } : {}), ...(i.listed.length ? { current: i.kept } : {}) }
       await record(client, 'action.requested', i.entity, null, identity.name, { action: i.action.id, run: i.runId, inputs: withoutAttached(i.action.inputs, i.inputs), state: 'awaiting', set, ...told })
@@ -1615,6 +1633,12 @@ export class Actions {
    * that kept it from starting.
    */
   private async start(run: ActionRun, claimedBy: string | null, inOrder = false, claimer: 'runner' | 'starter' = 'runner'): Promise<{ started: true } | { waits: string } | { state: ActionRunState }> {
+    // A run its route names a start for never starts before it, whoever would start it.
+    const from = run.routed?.route.to === 'people' ? run.routed.route.start : undefined
+    if (from && Date.parse(from) > Date.now()) {
+      this.deps.log.info('action run waits for the start its route names', { run: run.id, action: run.action, start: from })
+      return { waits: `its route lets it start no earlier than ${from}` }
+    }
     const action = this.get(run.action)
     const line = action?.serial ? `${run.action}|${run.entity ? entityId(run.entity) : ''}|${lineOf(action.serial, run.inputs)}` : null
     const out = await this.deps.db.tx(async (client) => {
@@ -1705,19 +1729,49 @@ export class Actions {
    * do not hold.
    */
   private async undecidable(identity: Identity, view: View | undefined, run: Waiting, set?: string): Promise<string | null> {
-    if (run.state !== 'awaiting') return `it is ${run.state}, not awaiting approval`
+    const judged = await this.counts(identity, view, run, set)
+    return 'why' in judged ? judged.why : null
+  }
+
+  /**
+   * What one identity's yes would count for on a run awaiting approval, of
+   * what it still waits for: the action's own approval (`action`, judged as
+   * `undecidable` says), what its route asks (`route`: someone its grants
+   * let in, never its asker, holding any tier it asks), or both. A yes that
+   * would count for nothing is refused, with why.
+   */
+  private async counts(identity: Identity, view: View | undefined, run: Waiting, set?: string): Promise<{ counts: ApprovalPart[] } | { why: string }> {
+    if (run.state !== 'awaiting') return { why: `it is ${run.state}, not awaiting approval` }
     // A run of a change set is decided with its set, as one: never alone.
-    if (run.changeSet && run.changeSet !== set) return `It is decided with its change set, as one: ${this.setUrl(run.changeSet)}`
-    if ((run.approvedBy ?? []).some((a) => a.by === identity.name)) return `You already approved it; it waits for ${(run.approvalsNeeded ?? 1) - (run.approvedBy ?? []).length} more`
+    if (run.changeSet && run.changeSet !== set) return { why: `It is decided with its change set, as one: ${this.setUrl(run.changeSet)}` }
+    const owed = owedOf(run)
+    if ((run.approvedBy ?? []).some((a) => a.by === identity.name)) return { why: `You already approved it; it waits for ${owedWords(owed)}` }
     const action = this.get(run.action)
+    // The person a product asked a run for never decides it, whoever else would.
+    if (run.requestedFor && run.requestedFor.toLowerCase() === identity.name.toLowerCase()) return { why: 'This run was asked for you, and the person it is for never decides it' }
+    // A run made as a person is made as whoever approves it, so only someone who could run it here themselves approves it into running as them.
+    if (action && madeAsPerson(action) && !((await this.deps.mayRun(identity, action)) && (!run.entity || (await this.targets(identity, view, action, [run.entity])).has(entityId(run.entity))))) return { why: `This run is made as whoever approves it, and only someone who may run "${action.title}" here themselves approves it` }
+    const counts: ApprovalPart[] = []
+    const ownWhy = owed.action > 0 ? await this.ownUndecidable(identity, view, run, action) : null
+    if (owed.action > 0 && !ownWhy) counts.push('action')
+    let routeWhy: string | null = null
+    if (run.routeAsks && owed.route > 0) {
+      // Who the route names decides what it asks, beside the action's own approval: never the person who asked, and no override.
+      if (run.by === identity.name) routeWhy = 'The person who asked for this run never decides what its route asks'
+      else if (!(await this.deps.grantsLetIn(identity.name, run.routeAsks.grants))) routeWhy = 'Only someone its route names decides what the route asks'
+      else routeWhy = await this.lacksTiers(identity, view, run)
+      if (!routeWhy) counts.push('route')
+    }
+    if (counts.length) return { counts }
+    return { why: ownWhy ?? routeWhy ?? `It waits for ${owedWords(owed)}, and yours would count for none of it` }
+  }
+
+  /** Why one identity may not give the action's own approval of a run, or null when they may: see `undecidable`. */
+  private async ownUndecidable(identity: Identity, view: View | undefined, run: Waiting, action: Action | undefined): Promise<string | null> {
     // What the rules let this person do on the run's entity, read only where a check needs it: most people are judged without it.
     let reading: Promise<Target | undefined> | undefined
     const targetOf = () => (reading ??= action && run.entity ? this.targets(identity, view, action, [run.entity]).then((m) => m.get(entityId(run.entity!))) : Promise.resolve(undefined))
     const own = run.by === identity.name
-    // The person a product asked a run for never decides it, whoever else would.
-    if (run.requestedFor && run.requestedFor.toLowerCase() === identity.name.toLowerCase()) return 'This run was asked for you, and the person it is for never decides it'
-    // A run made as a person is made as whoever approves it, so only someone who could run it here themselves approves it into running as them.
-    if (action && madeAsPerson(action) && !((await this.deps.mayRun(identity, action)) && (!run.entity || (await targetOf())))) return `This run is made as whoever approves it, and only someone who may run "${action.title}" here themselves approves it`
     // A run whose product named its approvers is decided by someone they let in alone: never its asker, and no override.
     if (run.approvers?.length) {
       if (own) return 'The person who asked for this run never decides it: the people it names as approvers do'
@@ -1781,8 +1835,8 @@ export class Actions {
     if (!action || run.state !== 'awaiting') return []
     const named: string[] = []
     for (const person of this.deps.people()) {
-      // Approvers a product named decide it whether or not the action lets them run it; otherwise a rule must.
-      if (!run.approvers?.length && !(await this.deps.mayRun(person, action))) continue
+      // Approvers a product named, and the people its route names, decide it whether or not the action lets them run it; otherwise a rule must.
+      if (!run.approvers?.length && !run.routeAsks && !(await this.deps.mayRun(person, action))) continue
       if (!(await this.undecidable(person, await this.deps.seenBy(person), run))) named.push(person.name)
     }
     this.deps.log.debug(named.length ? 'run has deciders by rule' : 'no rule names a decider of the run', { run: run.id, action: run.action, deciders: named })
@@ -1807,22 +1861,42 @@ export class Actions {
     return !why
   }
 
-  /** The run, when it awaits approval and this identity may decide it. Throws what keeps them from it. */
-  private async decidable(id: string, identity: Identity, view: View | undefined, set?: string): Promise<ActionRun> {
+  /** The run, when it awaits approval and this identity may decide it, with what their yes counts for. Throws what keeps them from it. */
+  private async decidable(id: string, identity: Identity, view: View | undefined, set?: string): Promise<ActionRun & { counts: ApprovalPart[] }> {
     const run = await this.requireRun(id)
     if (run.state !== 'awaiting') throw new ActionError(`Run "${id}" is ${run.state}, not awaiting approval`, 409)
     if (run.changeSet && run.changeSet !== set) throw new ActionError(`Run "${id}" is one of a change set, which is decided as one: ${this.setUrl(run.changeSet)}`, 409)
-    const why = await this.undecidable(identity, view, run, set)
-    if (why) {
-      this.deps.log.warn('run decision refused', { run: id, action: run.action, by: identity.name, reason: why })
-      throw new ActionError(why, 403)
+    const judged = await this.counts(identity, view, run, set)
+    if ('why' in judged) {
+      this.deps.log.warn('run decision refused', { run: id, action: run.action, by: identity.name, reason: judged.why })
+      throw new ActionError(judged.why, 403)
     }
-    return run
+    return { ...run, counts: judged.counts }
   }
 
-  /** `set` is the change set deciding the run as one of its own, when one is. */
-  async approve(id: string, identity: Identity, view?: View, note?: string, set?: string): Promise<ActionRun> {
+  /**
+   * `set` is the change set deciding the run as one of its own, when one is.
+   * `digest` is the digest of the statement the approver was shown, when the
+   * run states a change: an approval binds to it, so one shown another
+   * statement is refused. Each yes keeps the digest it was given for, and
+   * what it counts for: the action's own approval, what the route asks, or
+   * both. The yes that leaves nothing owed starts the run, or, when its route
+   * names a start still to come, queues it for then.
+   */
+  async approve(id: string, identity: Identity, view?: View, note?: string, set?: string, digest?: string): Promise<ActionRun> {
     const run = await this.decidable(id, identity, view, set)
+    if (run.statementDigest) {
+      if (digest !== undefined && digest !== run.statementDigest) {
+        this.deps.log.warn('run approval refused: it was given for another statement', { run: id, action: run.action, by: identity.name, digest, carries: run.statementDigest })
+        throw new ActionError(`The statement you approve (${digest}) is not the one this run carries (${run.statementDigest}): a different statement is a different run. Read the run again and decide what it carries`, 409)
+      }
+      const name = changeInput(this.get(run.action)?.inputs ?? {})
+      const held = name ? (run.inputs[name] as ChangeStatement | null) : null
+      if (!held || digestOf(held) !== run.statementDigest) {
+        this.deps.log.error('run approval refused: the statement it carries no longer has the digest it was asked with', { run: id, action: run.action, by: identity.name })
+        throw new ActionError('The statement this run carries is not the one it was asked with, so it cannot be approved', 409)
+      }
+    } else if (digest !== undefined) this.deps.log.info('approval names a statement, and the run states none: the digest is passed over', { run: id, action: run.action, by: identity.name })
     const said = note?.trim() ? `: ${note.trim()}` : ''
     const own = run.by === identity.name
     const at = new Date()
@@ -1832,40 +1906,60 @@ export class Actions {
     const signedIn = askingFor()?.toLowerCase() === identity.name.toLowerCase()
     // What lets the run call as the approver when its turn comes, if it waits behind others of its action: kept from this request alone.
     const grant = action && asThem && signedIn ? await this.holdFor(action, identity.name, id) : null
-    // One approval adds a name, and the one that makes it enough starts the run. Under a lock on the row, so two people approving
+    // The earliest its route lets it start: a run made enough before then is queued for then, and handed on when it comes.
+    const start = run.routed?.route.to === 'people' && run.routed.route.start ? new Date(run.routed.route.start) : null
+    const later = start && start.getTime() > at.getTime() ? start : null
+    // One approval adds a name, and the one that leaves nothing owed starts the run. Under a lock on the row, so two people approving
     // at once are two names, never the same count twice, and exactly one of them starts it.
-    const voted = await this.deps.db.tx(async (client) => {
+    type Owed = Record<ApprovalPart, number>
+    type Vote = { gone: string } | { again: Owed } | { adds: Owed } | { unsigned: true } | { names: Approval[]; enough: boolean; left: Owed; counts: ApprovalPart[] }
+    const voted = await this.deps.db.tx(async (client): Promise<Vote> => {
       const held = (await client.query<RunRow>('SELECT * FROM action_runs WHERE id = $1 FOR UPDATE', [id])).rows[0]
-      if (!held || held.state !== 'awaiting') return { state: held?.state ?? 'gone', names: [] as { by: string; at: string }[], enough: false }
+      if (!held || held.state !== 'awaiting') return { gone: held?.state ?? 'gone' }
       const names = [...(held.approved_by ?? [])]
-      if (names.some((n) => n.by === identity.name)) return { state: 'awaiting' as const, names, enough: false, again: true }
-      names.push({ by: identity.name, at: at.toISOString() })
-      const enough = names.length >= (held.approvals_needed ?? 1)
-      if (enough && asThem && !signedIn) return { state: 'awaiting' as const, names, enough: false, unsigned: true }
-      await client.query(`UPDATE action_runs SET approved_by = $2::jsonb${enough ? `, state = 'queued', decided_by = $3, decided_at = $4, note = $5, behalf_grant = $6` : ''} WHERE id = $1`, enough ? [id, JSON.stringify(names), identity.name, at, note?.trim() || null, grant] : [id, JSON.stringify(names)])
+      const now = toRun(held)
+      if (names.some((n) => n.by === identity.name)) return { again: owedOf(now) }
+      // What this yes counts for, of what is still owed now that the row is held: another yes may have closed a part since it was judged.
+      const before = owedOf(now)
+      const counts = run.counts.filter((part) => before[part] > 0)
+      if (!counts.length) return { adds: before }
+      names.push({ by: identity.name, at: at.toISOString(), ...(held.statement_digest ? { digest: held.statement_digest } : {}), for: counts })
+      const left = owedOf({ ...now, approvedBy: names })
+      const enough = left.action === 0 && left.route === 0
+      if (enough && asThem && !signedIn) return { unsigned: true }
+      await client.query(`UPDATE action_runs SET approved_by = $2::jsonb${enough ? `, state = 'queued', decided_by = $3, decided_at = $4, note = $5, behalf_grant = $6, retry_at = $7` : ''} WHERE id = $1`, enough ? [id, JSON.stringify(names), identity.name, at, note?.trim() || null, grant, later] : [id, JSON.stringify(names)])
       // Each yes is its own change.decided event, counted in the order the yeses came, and written with the yes itself.
       if (held.statement_digest) await this.recordDecided(client, run, held.statement_digest, at, names.length, identity.name, 'yes')
-      return { state: 'awaiting' as const, names, enough }
+      return { names, enough, left, counts }
     })
-    if (voted.state !== 'awaiting') throw new ActionError(`Run "${id}" is ${voted.state}, not awaiting approval`, 409)
-    if ('again' in voted) throw new ActionError(`You already approved it; it waits for ${(run.approvalsNeeded ?? 1) - voted.names.length} more`, 409)
+    if ('gone' in voted) throw new ActionError(`Run "${id}" is ${voted.gone}, not awaiting approval`, 409)
+    if ('again' in voted) throw new ActionError(`You already approved it; it waits for ${owedWords(voted.again)}`, 409)
+    if ('adds' in voted) throw new ActionError(`Your approval adds nothing it still waits for: it waits for ${owedWords(voted.adds)}`, 409)
     if ('unsigned' in voted) {
       this.deps.log.warn('run approval refused: the run is made as whoever approves it, and the approval carries no sign-in of theirs', { run: id, action: run.action, by: identity.name, signedInAs: askingFor() })
       needsOwnSignIn(identity.name, 'Approving this run')
       throw new ActionError(`This run is made as whoever approves it, from their own signed-in approval, and this approval carries no sign-in of yours: approve it on the run's page, ${this.runUrl(id)}`, 403)
     }
     const need = run.approvalsNeeded ?? 1
+    const routeNeed = run.routeAsks?.need ?? 0
+    const counted = voted.counts.includes('route') && routeNeed ? (voted.counts.includes('action') && need ? ', for the action and its route' : ', for its route') : ''
+    const bound = run.statementDigest ? { digest: run.statementDigest } : {}
     if (!voted.enough) {
-      const left = need - voted.names.length
-      await this.update(id, {}, `approved by ${identity.name}; ${voted.names.length} of ${need}, waiting for ${left} more${said}`)
-      await record(this.deps.db, 'action.voted', run.entity, null, identity.name, { action: run.action, run: id, requestedBy: run.by, given: voted.names.length, needed: need, ...setOf(run) })
-      this.deps.log.info('action run approved by one of several', { run: id, action: run.action, by: identity.name, given: voted.names.length, needed: need })
+      await this.update(id, {}, `approved by ${identity.name}${counted}; ${run.routeAsks ? `waiting for ${owedWords(voted.left)}` : `${voted.names.length} of ${need}, waiting for ${voted.left.action} more`}${said}`)
+      await record(this.deps.db, 'action.voted', run.entity, null, identity.name, { action: run.action, run: id, requestedBy: run.by, given: voted.names.length, needed: need, ...(run.routeAsks ? { routeNeeded: routeNeed, for: voted.counts } : {}), ...bound, ...setOf(run) })
+      this.deps.log.info('action run approved by one of several', { run: id, action: run.action, by: identity.name, given: voted.names.length, needed: need, routeNeeded: routeNeed, counts: voted.counts })
       return this.requireRun(id)
     }
+    const total = need + routeNeed
     const others = voted.names.slice(0, -1).map((n) => n.by)
-    await this.update(id, {}, `approved by ${identity.name}${own ? ', who asked for it' : ''}${others.length ? `; ${voted.names.length} of ${need}, with ${others.join(', ')}` : ''}${run.tiers.length ? `; granted ${run.tiers.join(', ')}` : ''}${asThem ? `; it runs as ${identity.name}, from their own signed-in approval` : ''}${said}`)
-    await record(this.deps.db, 'action.approved', run.entity, null, identity.name, { action: run.action, run: id, requestedBy: run.by, selfApproved: own, ...(need > 1 ? { approvedBy: voted.names.map((n) => n.by), needed: need } : {}), ...(run.tiers.length ? { tiers: run.tiers } : {}), ...(asThem ? { runsAs: identity.name } : {}), ...setOf(run) })
-    this.deps.log.info(own ? 'action run approved by whoever asked for it' : 'action run approved', { run: id, action: run.action, by: identity.name, tiers: run.tiers, needed: need, runsAs: asThem ? identity.name : null })
+    await this.update(id, {}, `approved by ${identity.name}${own ? ', who asked for it' : ''}${counted}${others.length ? `; ${voted.names.length} of ${total}, with ${others.join(', ')}` : ''}${run.tiers.length ? `; granted ${run.tiers.join(', ')}` : ''}${asThem ? `; it runs as ${identity.name}, from their own signed-in approval` : ''}${said}`)
+    await record(this.deps.db, 'action.approved', run.entity, null, identity.name, { action: run.action, run: id, requestedBy: run.by, selfApproved: own, ...(total > 1 ? { approvedBy: voted.names.map((n) => n.by), needed: need } : {}), ...(run.routeAsks ? { routeNeeded: routeNeed } : {}), ...(run.tiers.length ? { tiers: run.tiers } : {}), ...(asThem ? { runsAs: identity.name } : {}), ...bound, ...setOf(run) })
+    this.deps.log.info(own ? 'action run approved by whoever asked for it' : 'action run approved', { run: id, action: run.action, by: identity.name, tiers: run.tiers, needed: need, routeNeeded: routeNeed, runsAs: asThem ? identity.name : null })
+    if (later) {
+      await this.update(id, {}, `its route lets it start no earlier than ${later.toISOString()}: queued until then`)
+      this.deps.log.info('approved run waits for the start its route names', { run: id, action: run.action, start: later.toISOString() })
+      return this.requireRun(id)
+    }
     await this.dispatch(await this.requireRun(id), await this.scopeOf(await this.requireRun(id)))
     return this.requireRun(id)
   }
@@ -2428,7 +2522,8 @@ export class Actions {
     // A run waiting for whoever asked to start it, and never started, is given up the same way: nothing will ever pick it up.
     // One waiting its turn behind another of its line is not idle: its time counts from when the line was last free.
     const callers = this.cache.filter((a) => a.backend.type === 'caller').map((a) => a.id)
-    const queued = callers.length ? await this.deps.db.query<RunRow>(`SELECT * FROM action_runs WHERE state = 'queued' AND action = ANY($1) AND coalesce(decided_at, created_at) < $2`, [callers, cutoff]) : { rows: [] }
+    // A run its route lets start only later is idle from then, not from its approval.
+    const queued = callers.length ? await this.deps.db.query<RunRow>(`SELECT * FROM action_runs WHERE state = 'queued' AND action = ANY($1) AND greatest(coalesce(decided_at, created_at), coalesce((routed->'route'->>'start')::timestamptz, '-infinity')) < $2`, [callers, cutoff]) : { rows: [] }
     let given = 0
     for (const row of queued.rows) {
       const run = toRun(row)
@@ -3195,16 +3290,18 @@ export class Actions {
   }
 
   /**
-   * Hands on every run whose next try is due: a runner's, or a job's,
-   * becomes one to claim, and any other backend is handed it again. A run cancelled while it
-   * waited is not touched. How many it handed on.
+   * Hands on every run that is due: one whose next try has come, or one
+   * approved before the start its route names, once that start has come. A
+   * runner's, or a job's, becomes one to claim, and any other backend is
+   * handed it. A run cancelled while it waited is not touched. How many it
+   * handed on.
    */
   async retryDue(): Promise<number> {
     const due = await this.deps.db.query<RunRow>(`UPDATE action_runs SET retry_at = NULL WHERE state = 'queued' AND retry_at IS NOT NULL AND retry_at <= now() RETURNING *`)
     for (const row of due.rows) {
       const run = toRun(row)
       const action = this.get(run.action)
-      this.deps.log.info('action run next try due', { run: run.id, action: run.action, attempt: run.attempt })
+      this.deps.log.info(run.attempt > 1 ? 'action run next try due' : 'action run due: the start its route names has come', { run: run.id, action: run.action, attempt: run.attempt })
       if (!action || action.backend.type === 'runner' || action.backend.type === 'job') {
         this.deps.events.emit({ type: 'action_run', id: run.id })
         continue
@@ -3331,19 +3428,70 @@ export class Actions {
   // Change events ---------------------------------------------------------------------
 
   /**
-   * The change statement a run is asked with, its digest, and the route the
-   * hub judges for it, or null when the action has no change input or the run
-   * was given none. `waiting` is the run as it waits, or null for one that
-   * starts at once.
+   * Whether a run waits, given what its action and its rules ask (`waits`,
+   * `selfHeld`), with the judge's route for an action that opts in to it.
+   * The route only adds: a route to people asks its grants beside whoever
+   * the action asks, and a route of no one leaves the run as the action
+   * left it. A run with no statement, one the judge gave no answer for, or
+   * one a fence holds goes to people as `approval: true` sends a run: to
+   * someone other than its asker. The fences: a route of no one is refused
+   * for a change applied on the machine that asked (`asker`), and for one
+   * with a part the writer could not name or an effect the judge holds no
+   * proof of (`unknown`); no answer is `judge_down`.
    */
-  private async statementOf(action: Action, inputs: Record<string, unknown>, waiting: Waiting | null, set?: string): Promise<Stated | null> {
+  private async route(action: Action, inputs: Record<string, unknown>, run: string, waits: boolean, selfHeld: boolean): Promise<{ waits: boolean; selfHeld: boolean; needed: number; judged: JudgedRoute | null }> {
+    const own = { waits, selfHeld, needed: waits ? needed(action) : 1 }
+    if (!action.judge) return { ...own, judged: null }
+    const name = changeInput(action.inputs)
+    const statement = name ? (inputs[name] as ChangeStatement | null) : null
+    const toPeople = (judged: JudgedRoute | null) => ({ waits: true, selfHeld: false, needed: needed(action), judged })
+    if (!statement) {
+      this.deps.log.info('judged action run states no change: it goes to people', { action: action.id, run })
+      return toPeople(null)
+    }
+    const answer = await this.deps.judge.route(statement, { run, action: action.id })
+    if (!answer.ok) {
+      this.deps.log.warn('change goes to people: the judge gave no answer', { action: action.id, run, reason: answer.why })
+      return toPeople({ answer: null, fences: [{ fence: 'judge_down' }], asks: null, own: waits })
+    }
+    const routing = answer.routing
+    if (routing.route.to === 'people') {
+      const asks = { grants: routing.route.grants, need: routing.route.quorum }
+      this.deps.log.info(waits ? 'change routed to people beside the action\'s own approval' : 'change routed to people', { action: action.id, run, pack: routing.judge.pack, grants: asks.grants.length, need: asks.need, own: waits })
+      return { waits: true, selfHeld, needed: waits ? needed(action) : 0, judged: { answer: routing, fences: [], asks, own: waits } }
+    }
+    const fences: ChangeReason[] = []
+    if (statement.applier === 'asker') fences.push({ fence: 'asker' })
+    for (const [part] of (statement.unknown ?? []).entries()) fences.push({ fence: 'unknown', part })
+    for (const r of routing.reasons ?? []) if (r.effect !== undefined && r.proof === 'unknown') fences.push({ fence: 'unknown', effect: r.effect, proof: 'unknown' })
+    if (fences.length) {
+      this.deps.log.info('route of no one refused: a fence sends the change to people', { action: action.id, run, fences: fences.map((f) => f.fence) })
+      return toPeople({ answer: routing, fences, asks: null, own: waits })
+    }
+    this.deps.log.info(waits ? 'change routed to no one: the action\'s own approval still holds it' : 'change routed to no one: it is queued at once', { action: action.id, run, pack: routing.judge.pack })
+    return { ...own, judged: { answer: routing, fences: [], asks: null, own: waits } }
+  }
+
+  /**
+   * The change statement a run is asked with, its digest, and its route as
+   * its change.routed event says it, or null when the action has no change
+   * input or the run was given none. `waiting` is the run as it waits, or
+   * null for one that starts at once; `judged` is how the judge routed it,
+   * for an action that opts in to the judge.
+   */
+  private async statementOf(action: Action, inputs: Record<string, unknown>, waiting: Waiting | null, judged: JudgedRoute | null, set?: string): Promise<Stated | null> {
     const name = changeInput(action.inputs)
     const statement = name ? (inputs[name] as ChangeStatement | null) : null
     if (!statement) return null
     const digest = digestOf(statement)
-    const waitsOn = waiting ? await this.waitsOn(waiting, set) : null
-    this.deps.log.info('action run states a change', { action: action.id, run: waiting?.id ?? null, input: name, key: statement.key, digest, route: waitsOn ? 'people' : 'no_one' })
-    return { statement, digest, waitsOn, quorum: waiting?.approvalsNeeded ?? 1 }
+    // Who the action's own approval waits on; a run only its route holds waits on no one of the action's.
+    const own = waiting && (waiting.approvalsNeeded ?? 1) > 0 ? { ...waiting, routeAsks: null } : null
+    const waitsOn = own ? await this.waitsOn(own, set) : null
+    const named = waitsOn && waitsOn.some((g) => g.values.length) ? waitsOn : null
+    if (waitsOn && !named) this.deps.log.warn('change routed to people names nobody: no one may decide its run now', { run: waiting?.id ?? null, action: action.id })
+    const routing = routingOf(action.id, this.deps.version, judged, waitsOn ? (named ?? [{ values: [] }]) : null, waiting?.approvalsNeeded ?? 1)
+    this.deps.log.info('action run states a change', { action: action.id, run: waiting?.id ?? null, input: name, key: statement.key, digest, route: routing.route.to, judge: routing.judge?.name ?? null })
+    return { statement, digest, routing }
   }
 
   /**
@@ -3363,9 +3511,7 @@ export class Actions {
   private async recordStated(client: Recorder, run: { id: string; action: string; entity: EntityRef | null }, stated: Stated, at: Date): Promise<void> {
     const ref = run.entity ? { blueprint: run.entity.blueprint, key: run.entity.key } : null
     await record(client, 'change.stated', ref, null, null, { action: run.action, run: run.id, event: statedEvent(run.id, stated.statement, stated.digest, at) })
-    const waitsOn = stated.waitsOn && stated.waitsOn.some((g) => g.values.length) ? stated.waitsOn : null
-    if (stated.waitsOn && !waitsOn) this.deps.log.warn('change routed to people names nobody: no one may decide its run now', { run: run.id, action: run.action })
-    await record(client, 'change.routed', ref, null, null, { action: run.action, run: run.id, event: routedEvent(run, stated.digest, at, this.deps.version, stated.waitsOn ? (waitsOn ?? [{ values: [] }]) : null, stated.quorum) })
+    await record(client, 'change.routed', ref, null, null, { action: run.action, run: run.id, event: routedEvent(run, stated.digest, at, stated.routing) })
   }
 
   private async recordDecided(client: Recorder, run: Pick<ActionRun, 'id' | 'action' | 'entity'>, digest: string, at: Date, n: number, by: string, answer: 'yes' | 'no'): Promise<void> {
@@ -3467,6 +3613,11 @@ export function needed(action: Pick<Action, 'quorum'>): number {
   return action.quorum?.need ?? 1
 }
 
+/** How many yeses the action's own approval asks of a run of a change set, which waits for the set's decision whether or not it would wait alone: none for one only its route holds. */
+function setNeed(i: Pick<JudgedRun, 'action' | 'waits' | 'needed'>): number {
+  return i.waits ? i.needed : needed(i.action)
+}
+
 function asText(value: unknown): string {
   if (value === null || value === undefined) return ''
   return typeof value === 'object' ? JSON.stringify(value) : String(value)
@@ -3511,6 +3662,8 @@ function toRun(r: RunRow): ActionRun {
     images: r.images ?? [],
     ...(r.wrote_back?.length ? { wroteBack: r.wrote_back } : {}),
     ...(r.statement_digest ? { statementDigest: r.statement_digest } : {}),
+    ...(r.routed ? { routed: r.routed } : {}),
+    routeAsks: r.route_asks ?? null,
   }
 }
 

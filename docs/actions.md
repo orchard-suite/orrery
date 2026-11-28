@@ -28,6 +28,7 @@ actions:
       tag: { type: string, title: New tag, required: true, description: The tag to deploy, such as 0.9.13. }
     backend: { ... }
     approval: false                    # true holds the run until someone else approves
+    judge: true                        # an action with a change input: the estate's judge adds people to who is asked (Approval by the judge, below)
     confirm: false                     # true shows the person what they filled in, to check, before it is sent; always on for an input that changes a list (below)
     refreshes: [allowed_origins]       # fields of the entity it runs on that a run may write back once it succeeds (Writing back what a run changed, below)
     form: true                         # false: no form; only a tool starts it (An action with no form, below)
@@ -263,7 +264,7 @@ the contract's shape, in the activity row of the change that made it:
 | Event | When | What it says |
 | --- | --- | --- |
 | `change.stated` | the run is asked | the statement and its digest |
-| `change.routed` | right after | the route: to people, the people who may decide the run now and its quorum, when it waits for approval; to no one when it does not. The hub is the judge (`orrery`, its version, the pack `action.<action id>`, the rule `action-approval`) |
+| `change.routed` | right after | the route: to people, the people who may decide the run now and its quorum, when it waits for approval; to no one when it does not. The hub is the judge (`orrery`, its version, the pack `action.<action id>`, the rule `action-approval`), unless the action opts in to the estate's judge: then it carries that judge, its route with the action's own approvers added, its reasons, the fences, and its drafts (below) |
 | `change.decided` | each approve and decline | who, and yes or no |
 | `change.ended` | the run reaches a final state, once | `ok`, `failed`, or `refused`, and the applier's check |
 
@@ -294,6 +295,97 @@ the forwarder keeps its own mark, moved only past rows a minute old, and the
 next pass sends them again. So a desk that is down, or does not take the
 route yet, loses nothing, fails no run, and holds up no notice.
 `orrery.dispatch.change_events` counts what the desk answered.
+
+### Approval by the judge
+
+An action with a `change` input may hand who must look at each run to the
+estate's judge (Trellis), with `judge: true` beside its approval settings:
+
+```yaml
+id: apply_plan
+inputs:
+  plan:
+    type: change
+    required: true
+backend: { type: job, starter: east, template: infra-apply }
+judge: true
+```
+
+Each run's statement goes to the judge before the run is queued, as
+`POST <JUDGE_URL>/v1/judge` with the body `{"statement": ...}`. `JUDGE_URL`
+is a hub setting: the judge's address on the cluster network, called with no
+credential. A 200 answers `{"judge": {"name", "version", "pack"}, "route",
+"reasons", "drafts"}`, the platform kit's `Route`, `RouteReason`, and
+`Draft`: a route is `{"to": "no_one"}`, or `{"to": "people", "grants":
+[{"path", "field", "values"}], "quorum", "by", "start"}`, its grants named
+as the hub names approvers. A 400 answers `{"error", "reason"}`. The hub
+holds the answer to the kit's route rules (`validateRoute`): a route of no
+one names no one, no quorum, and no time; a route to people names 1 to 16
+grants of 1 to 50 people each and a quorum of at least 1; a reason names an
+effect or a part of the statement (by an index the statement has), a fence,
+or a rule; no fence stands on a route of no one; no name holds an address
+or what reads as a value or a secret. Anything else the answer says is
+passed over.
+
+**The judge only adds.** The action keeps the approval it names for itself
+(`approval`, `quorum`, `selfApproval`) and the approvals its access rules
+name (`approval` on a rule, tiers, approvers a product named):
+
+- A route of no one queues the run at once only when the action and its
+  rules ask no one. When they ask someone, the run waits for them as if no
+  judge were asked. A judge answer of no one on an action with
+  `approval: true` still waits for that approval.
+- A route to people asks its grants as well: the run waits for `quorum`
+  yeses from people its grants let in, never its asker, and no override, and
+  for whatever the action's own approval asks. Both must be met. Each yes
+  counts for whatever it may (`for` on each of `approvedBy`: `action`,
+  `route`, or both), and the yes that leaves nothing owed starts the run. A
+  run only the route holds has `approvalsNeeded` 0.
+
+**The fences.** Each sends the run to people as `approval: true` sends a
+run, to someone other than its asker, and is a reason on its route:
+
+| Fence | When |
+| --- | --- |
+| `judge_down` | the judge gave no answer: `JUDGE_URL` is unset, the call failed, it took longer than three seconds (the hub waits no longer, and never waits on the judge to pass a change), it answered anything but 200, or its answer breaks the rules above. The route then names no judge |
+| `asker` | the judge said no one, and the statement's `applier` is `asker`: a change applied on the machine that asked never goes to no one |
+| `unknown` | the judge said no one, and the statement lists a part the writer could not name an effect for, or the judge gave an effect the proof `unknown` |
+
+A run of a judge-routed action that states no change goes to people the
+same way, without asking the judge, and writes no change event.
+
+**What the run keeps.** The run keeps its route as its `change.routed`
+event says it (`routed`): the judge, the route, each reason, and each
+draft. What the route asks beside the action's own approval is
+`routeAsks` (`{grants, need}`). The quorum, `by`, and `start` are the
+run's own, whatever the action says later:
+
+- The run is not started before `start`: a run approved before then is
+  queued for then (`retryAt`), its log says so, and whoever would start it
+  earlier is refused. A caller's run left unstarted is given up counting
+  from `start`.
+- `by` is when the decision is due. It shows on the ask.
+- A draft is what a pack not counting yet would have answered. It is kept
+  and shown, marked as a draft, and never changes who is asked.
+
+**The ask.** The run's page shows, under the statement, who judged it, the
+route, when it is due and when it may start, each reason (which effect, on
+which thing, at what proof, and which fence), and each draft. A notice of
+a run that waits says the same in words.
+
+**An approval binds to the statement.** Each yes keeps the digest of the
+statement it was given for (`digest` on each of `approvedBy`). An approve
+call may send `{"digest"}`, the `statementDigest` the approver was shown;
+the run's page always does, and a digest that is not the run's is refused
+409. A different statement is a new run, and the applier's own check of
+what it holds stays as it is.
+
+The `change.routed` event carries the judge (absent only under
+`judge_down`), the route the run takes: to people when the route or the
+action asks anyone, with the route's grants and then the action's own
+approvers, the larger of the two quorums, and the route's `by` and
+`start`; its reasons: the judge's, then the fences, then `action-approval`
+when the action's own approval holds the run; and the judge's drafts.
 
 ### The watch's verdict
 
