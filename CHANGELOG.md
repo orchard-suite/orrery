@@ -202,6 +202,12 @@ All notable changes to this project will be documented in this file. See [standa
 * hide a column on a grid with no saved layout ([bf0b005](https://github.com/orchard-suite/orrery/commit/bf0b005b3df3da0a23aeab19002eefe03cf68a9c))
 * keep blueprint fields in the order written ([4606692](https://github.com/orchard-suite/orrery/commit/460669295d0c49554ce15b4d3a42a6f1b8c648f0))
 
+## [2.6.0](https://github.com/orchard-suite/orrery/compare/v2.5.0...v2.6.0) (2026-11-28)
+
+### Features
+
+* **orrery:** send annals a change's whole statement ([7637205](https://github.com/orchard-suite/orrery/commit/7637205a53e01f11990e04b2325d1316ca6d080a))
+
 ## [2.5.0](https://github.com/orchard-suite/orrery/compare/v2.4.0...v2.5.0) (2026-11-28)
 
 ### Features
