@@ -1777,7 +1777,12 @@ statement") also writes its change events, `change.stated`, `change.routed`,
 its own under the event's key, such as `<run id>.stated`: about the change
 (`target` of kind `change`), caused by its stated event, with the
 statement's digest as `change.after_hash`, and, on the stated one, the
-things it touches as `items` and its effects as `effects`. The watch's
+first 100 things it touches as `items`, its effects as `effects` (each
+claim's rule and version as `claim_rule` and `claim_version`), and the rest
+of the statement as `statement`: its key, its writer, every thing it
+touches (up to the contract's 1000), its artifact, and each part it could
+not name an effect for. With the actor and the `applier` label, Annals
+keeps the whole statement. The watch's
 verdict on a change, `change.observed`, is kept with its run too, and is
 not forwarded: the watch sends it to Annals itself.
 

@@ -6,8 +6,11 @@
 //
 // A run's change events (`change.stated`, `.routed`, `.decided`, `.ended`)
 // go as Annals' change records: keyed by the event's own key, caused by the
-// stated event, with the things and effects the statement names and its
-// digest as the change's hash.
+// stated event, with its digest as the change's hash. The stated record
+// carries the whole statement: the actor, the effects with their claims'
+// rules and versions, the applier label, and the rest of it as `statement`,
+// every thing and every unnamed part included, so Annals can rebuild it to
+// the same digest. Its items index only the first 100 things.
 //
 // The watch's verdict on a change (`change.observed`) is kept here too, and
 // left out: the watch sends it to Annals itself, so it is never there twice.
@@ -80,8 +83,16 @@ export interface AnnalsEvent {
   cause_source?: string
   /** Things the event touched besides its target: a change's catalog entities. */
   items?: { system: string; kind: string; id: string }[]
-  /** What a change was stated to do to each live thing. */
-  effects?: { kind: string; subject: { blueprint: string; key: string }; path: string; size?: number; undo: string; claim: string }[]
+  /** What a change was stated to do to each live thing, with the rule and the provider version its claim came from. */
+  effects?: { kind: string; subject: { blueprint: string; key: string }; path: string; size?: number; undo: string; claim: string; claim_rule?: string; claim_version?: string }[]
+  /** On a change.stated record, what of its statement no other field holds: with the actor, the effects, and the applier label, the whole statement. */
+  statement?: {
+    key: string
+    writer: { name: string; version: string }
+    things?: { blueprint: string; key: string }[]
+    artifact: { kind: string; digest: string }
+    unknown?: { thing?: { blueprint: string; key: string }; part: string; why: 'unread' | 'unnamed' }[]
+  }
   change?: { after_hash: string }
   labels: Record<string, string>
 }
@@ -252,6 +263,7 @@ export function changeRecord(e: ChangeEvent, reason?: string): AnnalsEvent {
       event.actor = actorOf(s.actor)
       event.items = (s.things ?? []).slice(0, ITEMS_MAX).map((t) => ({ system: 'catalog', kind: t.blueprint, id: t.key }))
       event.effects = (s.effects ?? []).map(effectOf)
+      event.statement = statementOf(s)
       event.labels = { applier: s.applier, writer: clip(s.writer.name, LABEL_MAX) }
       break
     }
@@ -284,7 +296,19 @@ function actorOf(a: ChangeStatement['actor']): AnnalsEvent['actor'] {
 }
 
 function effectOf(e: NonNullable<ChangeStatement['effects']>[number]): NonNullable<AnnalsEvent['effects']>[number] {
-  return { kind: e.kind, subject: { blueprint: e.subject.blueprint, key: e.subject.key }, path: e.path, ...(e.size !== undefined ? { size: e.size } : {}), undo: e.undo, claim: e.claim.from }
+  return { kind: e.kind, subject: { blueprint: e.subject.blueprint, key: e.subject.key }, path: e.path, ...(e.size !== undefined ? { size: e.size } : {}), undo: e.undo, claim: e.claim.from, ...(e.claim.rule ? { claim_rule: e.claim.rule } : {}), ...(e.claim.version ? { claim_version: e.claim.version } : {}) }
+}
+
+/** The rest of a statement, as Annals keeps it on a change.stated record: every thing it touches and every part it could not name, not only the first 100 things its items index. */
+function statementOf(s: ChangeStatement): NonNullable<AnnalsEvent['statement']> {
+  const ref = (r: { blueprint: string; key: string }) => ({ blueprint: r.blueprint, key: r.key })
+  return {
+    key: s.key,
+    writer: { name: s.writer.name, version: s.writer.version },
+    ...(s.things?.length ? { things: s.things.map(ref) } : {}),
+    artifact: { kind: s.artifact.kind, digest: s.artifact.digest },
+    ...(s.unknown?.length ? { unknown: s.unknown.map((u) => ({ ...(u.thing ? { thing: ref(u.thing) } : {}), part: u.part, why: u.why })) } : {}),
+  }
 }
 
 /** What a row is about: an entity, a run, or the thing its kind names. */

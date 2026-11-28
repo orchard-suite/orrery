@@ -229,13 +229,35 @@ describe('change records', () => {
       action: { verb: 'change.stated', target, outcome: 'ok' },
       items: [{ system: 'catalog', kind: 'workload', id: 'acme-api-prod' }],
       effects: [
-        { kind: 'stops', subject: { blueprint: 'workload', key: 'acme-api-prod' }, path: 'in-place', size: 2, undo: 'yes', claim: 'writer' },
-        { kind: 'grants', subject: { blueprint: 'workload', key: 'acme-api-prod' }, path: 'in-place', size: 1, undo: 'yes', claim: 'writer' },
+        { kind: 'stops', subject: { blueprint: 'workload', key: 'acme-api-prod' }, path: 'in-place', size: 2, undo: 'yes', claim: 'writer', claim_rule: 'app-settings-restart', claim_version: 'azurerm 4.20' },
+        { kind: 'grants', subject: { blueprint: 'workload', key: 'acme-api-prod' }, path: 'in-place', size: 1, undo: 'yes', claim: 'writer', claim_rule: 'role-assignment' },
       ],
+      statement: {
+        key: 'plan-7f3a2c',
+        writer: { name: 'infra', version: '3.1.0' },
+        things: [{ blueprint: 'workload', key: 'acme-api-prod' }],
+        artifact: { kind: 'plan', digest: 'sha256:9f2c4b1e7a6d3c5b8e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d' },
+        unknown: [{ thing: { blueprint: 'workload', key: 'acme-api-prod' }, part: 'site_config.cors', why: 'unnamed' }],
+      },
       change: { after_hash: digest },
       labels: { applier: 'hub', writer: 'infra' },
     })
     expect(e.cause).toBeUndefined()
+  })
+
+  it('keep every thing and every unnamed part of a statement, though items index only the first 100', () => {
+    const things = Array.from({ length: 150 }, (_, i) => ({ blueprint: 'workload', key: `acme-api-${i}` }))
+    const unknown = [{ part: 'tags', why: 'unread' as const }, { thing: things[149]!, part: 'site_config.cors', why: 'unnamed' as const }]
+    const { effects: _effects, ...bare } = statement
+    const e = changeRecord(statedEvent('r2', { ...bare, things, unknown }, digest, at))
+    expect(e.items).toHaveLength(100)
+    expect(e.items![99]).toEqual({ system: 'catalog', kind: 'workload', id: 'acme-api-99' })
+    expect(e.statement?.things).toEqual(things)
+    expect(e.statement?.unknown).toEqual(unknown)
+    expect(e.effects).toEqual([])
+    // A statement that names no thing and no unknown part sends neither, as the contract leaves them out.
+    const { unknown: _u, ...plain } = statement
+    expect(Object.keys(changeRecord(statedEvent('r3', plain, digest, at)).statement!).sort()).toEqual(['artifact', 'key', 'things', 'writer'])
   })
 
   it('send the route, each answer, and the end as caused by the stated change', () => {
