@@ -7,6 +7,11 @@ This repository is public and estate-neutral. Every name in a test, an
 example, or a doc comes from the fixture world:
 https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
 
+Decision records are the registry `ORY` in a Vantage hub, cited as `ORY-5001`.
+`vantage.yaml` names the registry; each estate maps this repository to its
+hub in its own Vantage settings. Code, comments, and docs cite a record and
+never restate it.
+
 ## Shape
 
 - `src/shared` is the contract: the model (`model.ts`), the search filter and
@@ -332,20 +337,20 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     `src/shared/action-spec.ts` is the one answer to which inputs cannot be,
     read by the save, the grid, and the batch, and `inputsForMany` fills each
     run's inputs that narrow the target from its own entity. A change set is
-    many runs asked for one decision (`change-sets.ts`, ADR-5009): each item
+    many runs asked for one decision (`change-sets.ts`, ORY-5009): each item
     is judged by `judgeItem`, the same `judge` a run alone goes through, and
     the set is refused whole when any item is, naming each. Its runs name
     the set (`change_set`, `set_index`) and are decided, withdrawn, and told
     only as the set: `undecidable` refuses a run of a set unless the set
     asks, and every activity row about one names it as `set`. `holdSet` says
     who holds its runs and that someone decides them all. A run under way
-    lives by being heard from (ADR-5010): `lifeOf` is the one reading of how
+    lives by being heard from (ORY-5010): `lifeOf` is the one reading of how
     long a run of an action may go unheard from and how long it may run at
     all, and `expire` the one place a run is given up, as `unknown`. Every
     report stamps `heard_at`, and one that carries nothing does only that,
     at most once a minute (`heard`); a new backend says how it is heard
     from in `lifeOf`, never with a clock of its own. A `job` backend is one
-    container a run (ADR-4002; `claimJobs`, `heldBy`): a starter, which is a runner
+    container a run (ORY-4002; `claimJobs`, `heldBy`): a starter, which is a runner
     source, claims the run, is handed the credential made for that run alone
     (`job_token`, kept as a hash, gone when the run ends or is put back),
     and reports as a runner does. The hub starts and stops nothing: a job's
@@ -676,7 +681,7 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     from `icons/` beside its catalog files, and the files `/v1/icons`
     serves, built-in brand files included. A custom icon's name is never one
     of the set's. `read.ts` takes a custom icon's name as a picture.
-  - `pictures.ts` is people's pictures (ADR-5008), kept by the address a
+  - `pictures.ts` is people's pictures (ORY-5008), kept by the address a
     person signs in with and never as an entity's value: the photo a source
     puts (`/v1/ingest/pictures`), two square JPEGs whose sizes and caps are
     `PHOTO_SIZES` in `src/shared/icons.ts`, named `photo:<sha256>` by their
@@ -789,12 +794,12 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     data); `src/shared/report-draw.ts` is the one drawer, `web` on the
     theme's tokens and `email` inline, escaping everything it draws, a
     writer's little Markdown included. A number is judged by two marks,
-    `good` and `bad` (`toneOf`, ADR-5006): a layout never names a colour or
+    `good` and `bad` (`toneOf`, ORY-5006): a layout never names a colour or
     writes a condition, and a tone is drawn as a shape with a name, never
     colour alone. A new block is one kind in
     `BLOCK_KINDS` and a branch of `parseLayout`, `buildContent`, and both
     profiles. The hub calls no model. The Query page shapes and a report
-    composes (ADR-5005): a saved query reaches a report as its own view
+    composes (ORY-5005): a saved query reaches a report as its own view
     shapes it (`dataOfAnswer`), and a block that names only its data shows
     that (`statsOf`, `chartOf`); never add a block option that restates
     what a query's view says. The hub brings the report actions itself
@@ -813,7 +818,7 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     (`components/ReportOutline.tsx`), never as a field of text.
   - `datasets.ts` reads published datasets: a read tool with a `dataset`
     block answers one table, which a saved query reads as the source
-    `$data:<id>` (ADR-3002). `datasetBlueprint` in `src/shared/model.ts` is
+    `$data:<id>` (ORY-3002). `datasetBlueprint` in `src/shared/model.ts` is
     a dataset as the query code takes a blueprint, columns as fields, so
     `queries.ts` and the web's query code treat it as one: `kinds` there,
     and `useQueryKinds` in the web app, are every blueprint and every
@@ -977,7 +982,7 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     with. `model` is the model as a reader sees it in the import's form,
     which `/v1/model/export` answers. A new part of the model a person edits
     is a kind in `MODEL_KINDS` and a branch of each method, never a route of
-    its own beside them (ADR-5001).
+    its own beside them (ORY-5001).
   - `activity.ts` is the activity log. `record` in it is the only place a
     row is written, and it names the actor from the request it runs in. A row
     written inside an agent's tool call says so in its detail (`door: mcp`).
@@ -1076,7 +1081,7 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     (`/v1/mine/stars/table`), built by handing `queries.ts` each
     blueprint's keys. A query, an export, a schedule, and a report never
     read stars, so what they hand on reads the same for everyone
-    (ADR-5007): never give `queries.ts` or the query language a star. The
+    (ORY-5007): never give `queries.ts` or the query language a star. The
     order is no part of a kept listing's shape, so a star rebuilds nothing
     in `lists.ts`; a grid's tag names the reader's star stamp, and a cursor
     the reader. A grid where the reader starred nothing is ordered and

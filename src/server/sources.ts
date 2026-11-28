@@ -417,7 +417,7 @@ export class Sources {
    * once it is silent past twice that, or has never reported. One with none
    * writes when something happens (a person deciding, an apply, a run of an
    * action whose record it is) and is never grey for being quiet
-   * (ADR-6002). Stale wins over everything; otherwise the last run decides.
+   * (ORY-6002). Stale wins over everything; otherwise the last run decides.
    */
   private effectiveStatus(row: SourceRow): { level: StatusLevel; reason: string | null } {
     if (row.spec.class === 'ui' || row.spec.class === 'hub') return { level: 'green', reason: null }

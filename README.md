@@ -663,7 +663,7 @@ overwrote which, so the field can be given to one of them.
   never shown or counted, and shows again when they may; it goes only when
   the hub purges what it names. A query, an export, a schedule, and a
   report never read stars, so what they hand on reads the same for
-  everyone (ADR-5007).
+  everyone (ORY-5007).
 - **Model.** The data model as a graph, left to right: blueprints as cards,
   relations as lines, a loop for a relation to itself, and a dotted line
   where two shown blueprints meet only through hidden ones. Each card names

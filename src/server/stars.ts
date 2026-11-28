@@ -4,7 +4,7 @@
 // reads puts what they starred first (`starredBy` in `query.ts`), and their
 // favorites page lists it. A query, a report, an export, and a schedule never
 // read it: they have readers downstream, and one person's stars would move
-// what all of them see (ADR-5007).
+// what all of them see (ORY-5007).
 //
 // A star names an entity and nothing more. One to something the person may no
 // longer see is kept and never shown or counted, so it shows again when they
