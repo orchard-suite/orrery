@@ -94,6 +94,15 @@ describe('an agent with its person\'s key, where the person decides what it asks
     expect(await h.hub.actions.deciders(await json<ActionRun>(await h.owner(`/v1/action-runs/${run.id}`)))).toEqual([OWNER])
   })
 
+  it('is told it is an agent, on the agent door and on the API', async () => {
+    const res = await h.agent('/mcp', { method: 'POST', headers: { accept: 'application/json, text/event-stream' }, ...body({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'who_am_i', arguments: {} } }) })
+    const sent = await res.text()
+    const line = sent.split('\n').find((l) => l.startsWith('data:'))
+    const rpc = JSON.parse(line ? line.slice(5) : sent) as { result: { content: { text: string }[] } }
+    expect(JSON.parse(rpc.result.content[0]!.text)).toMatchObject({ address: OWNER, kind: 'user', agent: 'agent-laptop' })
+    expect((await json<{ identity: { agent?: string } }>(await h.agent('/v1/whoami'))).identity.agent).toBe('agent-laptop')
+  })
+
   it('is the actor Annals records, for its person', async () => {
     const event = toEvent({ id: '1', at: new Date(), kind: 'action.requested', category: 'runs', outcome: 'ok', blueprint: null, key: null, source: null, actor: OWNER, actor_kind: 'user', detail: { action: 'fixed', run: 'r1', agent: 'agent-laptop' } })
     expect(event.actor).toEqual({ kind: 'agent', id: 'agent-laptop', on_behalf_of: OWNER })

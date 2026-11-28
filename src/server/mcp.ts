@@ -244,7 +244,7 @@ function build(deps: McpDeps, identity: Identity, view: View): McpServer {
   server.registerTool(
     'who_am_i',
     {
-      description: "Who the person you answer for is, and the time. Not needed to filter: a filter says \"@me\" and \"@today\" and the hub fills them in. Call it only to tell the person who they are in the catalog or what the time is. address is how fields of type user name them (requested_by, decided_by, and the like): filter such a field with eq and this address. person is their own entity, when the catalog holds one: relations to a person point at it. now is the time in UTC, as every datetime in the catalog is. today is the date on the person's own clock, in timeZone, and todayStartedAt the moment that day began: for today, filter a datetime field with gte and todayStartedAt. Say times to the person in timeZone.",
+      description: "Who the person you answer for is, and the time. Not needed to filter: a filter says \"@me\" and \"@today\" and the hub fills them in. Call it only to tell the person who they are in the catalog or what the time is. address is how fields of type user name them (requested_by, decided_by, and the like): filter such a field with eq and this address. person is their own entity, when the catalog holds one: relations to a person point at it. now is the time in UTC, as every datetime in the catalog is. today is the date on the person's own clock, in timeZone, and todayStartedAt the moment that day began: for today, filter a datetime field with gte and todayStartedAt. Say times to the person in timeZone. agent is your own name when you call with the person's key: you ask for them, and you never approve; give them the link a run that waits answers.",
       inputSchema: {},
     },
     async () => {
@@ -253,7 +253,7 @@ function build(deps: McpDeps, identity: Identity, view: View): McpServer {
       const timeZone = (identity.kind === 'user' ? (await deps.preferences.of(identity.name)).timeZone : null) ?? 'UTC'
       const now = new Date()
       const day = dayOf(now, timeZone)
-      return text({ address: identity.name, kind: identity.kind, ...(ref && view.seesEntity(ref) ? { person: entityId(ref) } : {}), now: now.toISOString(), timeZone, today: day.date, todayStartedAt: day.startedAt.toISOString() })
+      return text({ address: identity.name, kind: identity.kind, ...(identity.agent ? { agent: identity.agent } : {}), ...(ref && view.seesEntity(ref) ? { person: entityId(ref) } : {}), now: now.toISOString(), timeZone, today: day.date, todayStartedAt: day.startedAt.toISOString() })
     },
   )
 
