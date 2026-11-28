@@ -202,6 +202,12 @@ All notable changes to this project will be documented in this file. See [standa
 * hide a column on a grid with no saved layout ([bf0b005](https://github.com/orchard-suite/orrery/commit/bf0b005b3df3da0a23aeab19002eefe03cf68a9c))
 * keep blueprint fields in the order written ([4606692](https://github.com/orchard-suite/orrery/commit/460669295d0c49554ce15b4d3a42a6f1b8c648f0))
 
+## [3.0.1](https://github.com/orchard-suite/orrery/compare/v3.0.0...v3.0.1) (2026-11-28)
+
+### Bug Fixes
+
+* **orrery:** move the go module path to v3 ([95ca0de](https://github.com/orchard-suite/orrery/commit/95ca0de1f7ac5c0753d28203e838a964b4c6deee))
+
 ## [3.0.0](https://github.com/orchard-suite/orrery/compare/v2.6.0...v3.0.0) (2026-11-28)
 
 ### ⚠ BREAKING CHANGES
