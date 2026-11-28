@@ -228,13 +228,13 @@ export class Blueprints {
    * keeps its moment; any other changed at `at`. Stored where it moved, so
    * every hub and a restart read the same: a write that misses it is read as
    * a change, which derives again and is never wrong.
-   */
-  /**
+   *
    * Called in the same turn the cache takes the blueprint, before anything is
    * awaited, with the moment that turn ends (`movedNow`): a derivation stamps
-   * its rows with the moment it began to read, so one that began before the
-   * model moved, or in the same millisecond, is read as older than the shape
-   * and derived again.
+   * its rows with the moment it began to read, by the hub's clock, so one that
+   * began before the model moved, or in the same millisecond, is read as older
+   * than the shape and derived again. The moment is never the database's: its
+   * clock may run behind the hub's.
    */
   private async shape(bp: Blueprint, kept: { shape: string | null; at: Date | null } | undefined, at: Date): Promise<boolean> {
     const shape = shapeOf(bp)
@@ -272,7 +272,9 @@ export class Blueprints {
     }
     this.cache = new Map(rows.rows.map((r) => [r.id, { ...r.spec, id: r.id, origin: r.origin, updatedAt: r.updated_at.toISOString() }]))
     this.shapes = new Map()
-    for (const r of rows.rows) await this.shape(this.cache.get(r.id)!, { shape: r.shape, at: r.shaped_at }, r.updated_at)
+    // Each shape is kept in this same turn, so none is read meanwhile by the moment its row was saved.
+    const at = movedNow()
+    await Promise.all(rows.rows.map((r) => this.shape(this.cache.get(r.id)!, { shape: r.shape, at: r.shaped_at }, at)))
     this.indexAliases()
     const depth = await this.db.query<{ value: number }>(`SELECT value FROM settings WHERE key = 'canvas.maxNestingDepth'`)
     this.maxNestingDepth = depth.rows[0]?.value ?? 2

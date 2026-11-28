@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyCatalog } from './catalog.ts'
 import { loadConfig } from './config.ts'
 import { createHub, type Hub } from './hub.ts'
@@ -153,5 +153,40 @@ describe('a source registered under an old id', () => {
     expect(hub.entities.allowed(source, 'kit_widget2')).toBe(true)
     expect(hub.entities.allowed(source, 'widget2')).toBe(true)
     expect(hub.entities.allowed(source, 'tag')).toBe(false)
+  })
+})
+
+/** Runs the hub's clock `ms` ahead of the real one, as it is when the database's runs behind, and gives back the undo. */
+function clockAhead(ms: number): () => void {
+  const Real = globalThis.Date
+  const Ahead = class extends Real {
+    constructor(...args: unknown[]) {
+      if (args.length) super(...(args as [string | number | Date]))
+      else super(Real.now() + ms)
+    }
+    static override now(): number {
+      return Real.now() + ms
+    }
+  }
+  vi.stubGlobal('Date', Ahead)
+  return () => vi.unstubAllGlobals()
+}
+
+describe('a rename on a hub whose clock runs ahead of the database', () => {
+  it('reads what was derived before it as stale, so a filter by the new id still finds it', async () => {
+    // The hub stamps a derivation with its own clock: the rename must stamp the model's change with the same one.
+    const undo = clockAhead(5_000)
+    try {
+      await hub.blueprints.save({ id: 'cog', title: 'Cog' }, { kind: 'ui' }, 'test', async () => [])
+      await hub.blueprints.save({ id: 'wheel', title: 'Wheel', relations: { cog: { target: 'cog' } } }, { kind: 'ui' }, 'test', async () => [])
+      await hub.entities.createFromUi({ blueprint: 'cog', key: 'c1', relations: {} }, 'test')
+      await hub.entities.createFromUi({ blueprint: 'wheel', key: 'w1', relations: { cog: ['c1'] } }, 'test')
+      await hub.blueprints.rename('cog', 'shop_cog', 'test')
+      const keys = async (filter: object) => (await hub.reader.list({ blueprint: 'wheel', filter: filter as never })).entities.map((e) => e.key)
+      expect(await keys({ relation: 'cog', target: 'shop_cog:c1' })).toEqual(['w1'])
+      expect(await keys({ relation: 'cog', target: 'cog:c1' })).toEqual(['w1'])
+    } finally {
+      undo()
+    }
   })
 })
