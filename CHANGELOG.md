@@ -202,6 +202,17 @@ All notable changes to this project will be documented in this file. See [standa
 * hide a column on a grid with no saved layout ([bf0b005](https://github.com/orchard-suite/orrery/commit/bf0b005b3df3da0a23aeab19002eefe03cf68a9c))
 * keep blueprint fields in the order written ([4606692](https://github.com/orchard-suite/orrery/commit/460669295d0c49554ce15b4d3a42a6f1b8c648f0))
 
+## [3.0.0](https://github.com/orchard-suite/orrery/compare/v2.6.0...v3.0.0) (2026-11-28)
+
+### ⚠ BREAKING CHANGES
+
+* **orrery:** treat personal tokens as agents ([47ddbdf](https://github.com/orchard-suite/orrery/commit/47ddbdff80de38fc3eb79fa857b3baa11b93fec5))
+
+### Features
+
+* **orrery:** treat personal tokens as agents ([47ddbdf](https://github.com/orchard-suite/orrery/commit/47ddbdff80de38fc3eb79fa857b3baa11b93fec5))
+* **orrery:** tell an agent who_am_i that it is one ([f7bde2d](https://github.com/orchard-suite/orrery/commit/f7bde2d4f43134ca7013ccd38c9a2fcaf6a3ccf9))
+
 ## [2.6.0](https://github.com/orchard-suite/orrery/compare/v2.5.0...v2.6.0) (2026-11-28)
 
 ### Features
