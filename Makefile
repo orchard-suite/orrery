@@ -1,13 +1,18 @@
-.PHONY: check db api land test build go docker
+.PHONY: check deps db api land test build go docker
 
 # Lands main: release-damnit land runs the config's check (make check) on
 # exactly what lands and signs its proof, which the release verifies.
 land: ## land, running the check and signing its proof (from a worktree: make land BRANCH=<branch>)
 	release-damnit land $(BRANCH)
 
-check: db api ## typecheck, test, build web, vet and test Go, judge the API
+check: deps db api ## typecheck, test, build web, vet and test Go, judge the API
 	npm run check
 	go vet ./... && go test ./...
+
+# The packages, installed when the checkout has none: land runs the check in
+# a fresh worktree when the lander's checkout is not the landing tree.
+deps:
+	@[ -d node_modules ] || npm ci
 
 # The server tests' Postgres on :5433, started when it is not running. In CI
 # the workflow's Postgres service is already there.
