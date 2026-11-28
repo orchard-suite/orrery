@@ -312,9 +312,13 @@ judge: true
 ```
 
 Each run's statement goes to the judge before the run is queued, as
-`POST <JUDGE_URL>/v1/judge` with the body `{"statement": ...}`. `JUDGE_URL`
-is a hub setting: the judge's address on the cluster network, called with no
-credential. A 200 answers `{"judge": {"name", "version", "pack"}, "route",
+`POST <JUDGE_URL>/v1/judge` with the body `{"statement": ...}` and the
+header `Authorization: Bearer <JUDGE_TOKEN>`. Both are hub settings:
+`JUDGE_URL` is the judge's machine door on the cluster network, and
+`JUDGE_TOKEN` a token the judge issued for the hub. With either unset the
+judge is off, the way Annals and the desk are off without their tokens:
+the hub starts, logs that the judge is off, and calls nothing. The token
+is never logged. A 200 answers `{"judge": {"name", "version", "pack"}, "route",
 "reasons", "drafts"}`, the platform kit's `Route`, `RouteReason`, and
 `Draft`: a route is `{"to": "no_one"}`, or `{"to": "people", "grants":
 [{"path", "field", "values"}], "quorum", "by", "start"}`, its grants named
@@ -347,7 +351,7 @@ run, to someone other than its asker, and is a reason on its route:
 
 | Fence | When |
 | --- | --- |
-| `judge_down` | the judge gave no answer: `JUDGE_URL` is unset, the call failed, it took longer than three seconds (the hub waits no longer, and never waits on the judge to pass a change), it answered anything but 200, or its answer breaks the rules above. The route then names no judge |
+| `judge_down` | the judge gave no answer: `JUDGE_URL` or `JUDGE_TOKEN` is unset, the call failed, it took longer than three seconds (the hub waits no longer, and never waits on the judge to pass a change), it answered anything but 200 (a 401 or 403 for the hub's token too), or its answer breaks the rules above. The route then names no judge |
 | `asker` | the judge said no one, and the statement's `applier` is `asker`: a change applied on the machine that asked never goes to no one |
 | `unknown` | the judge said no one, and the statement lists a part the writer could not name an effect for, or the judge gave an effect the proof `unknown` |
 

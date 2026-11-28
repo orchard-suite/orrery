@@ -19,7 +19,7 @@ let hub: Hub
 const tokens: Record<string, string> = {}
 /** What the fake judge answers next, and every statement it was asked. */
 let reply: () => Response | Promise<Response> = () => Response.json({})
-const asked: { url: string; body: { statement: ChangeStatement } }[] = []
+const asked: { url: string; auth: string | null; body: { statement: ChangeStatement } }[] = []
 
 const json = async <T = Record<string, unknown>>(r: Response): Promise<T> => (await r.json()) as T
 const body = (v: unknown) => ({ body: JSON.stringify(v) })
@@ -43,9 +43,9 @@ const routedOf = async (run: string): Promise<ChangeRouted> => {
 }
 
 beforeAll(async () => {
-  const config = loadConfig({ DATABASE_URL, DATA_DIR: mkdtempSync(join(tmpdir(), 'orrery-')), AUTH_MODE: 'proxy', PUBLIC_URL: 'https://hub.example.com', JUDGE_URL: 'http://judge.test/' })
+  const config = loadConfig({ DATABASE_URL, DATA_DIR: mkdtempSync(join(tmpdir(), 'orrery-')), AUTH_MODE: 'proxy', PUBLIC_URL: 'https://hub.example.com', JUDGE_URL: 'http://judge.test/', JUDGE_TOKEN: 'judge-token' })
   const judgeFetch: typeof fetch = async (url, init) => {
-    asked.push({ url: String(url), body: JSON.parse(String(init?.body)) as { statement: ChangeStatement } })
+    asked.push({ url: String(url), auth: new Headers(init?.headers).get('authorization'), body: JSON.parse(String(init?.body)) as { statement: ChangeStatement } })
     return reply()
   }
   hub = await createHub(config, '9.9.9', { reset: true, judgeFetch })
@@ -81,7 +81,7 @@ describe('an action that opts in to the judge', () => {
   it('sends the statement to the judge before the run is queued, and a route of no one queues it at once when the action asks no one', async () => {
     reply = answer({ to: 'no_one' })
     const r = await ask('open', statement)
-    expect(asked).toEqual([{ url: 'http://judge.test/v1/judge', body: { statement } }])
+    expect(asked).toEqual([{ url: 'http://judge.test/v1/judge', auth: 'Bearer judge-token', body: { statement } }])
     expect(r.state).toBe('queued')
     expect(r.routed).toEqual({ judge: JUDGE, route: { to: 'no_one' }, reasons: [{ effect: 0, rule: 'stops-in-place', proof: 'measured' }] })
     expect(r.routeAsks).toBeNull()
@@ -208,9 +208,11 @@ describe('the fences', () => {
     expect((await json<ActionRun>(await approve('lead', r.id))).state).toBe('queued')
   })
 
-  it('takes a refusal or a malformed answer as no answer', async () => {
+  it('takes a refusal, of the statement or of the hub\'s token, or a malformed answer as no answer', async () => {
     const answers = [
       () => Response.json({ error: 'bad_statement', reason: 'unknown kind' }, { status: 400 }),
+      () => Response.json({ error: 'unauthorized', reason: 'bad token' }, { status: 401 }),
+      () => Response.json({ error: 'forbidden', reason: 'not the hub' }, { status: 403 }),
       () => new Response('not json', { status: 200 }),
       answer({ to: 'no_one', grants: [{ values: ['sec'] }] }),
       answer({ to: 'people', quorum: 1 }),

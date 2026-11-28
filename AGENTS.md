@@ -412,8 +412,9 @@ https://github.com/orchard-suite/hedge/blob/main/docs/fixtures.md.
     hears of a change from those events alone. Never write one for a run that states nothing.
     Whether a run waits is settled in one place, `judge` in `actions.ts`,
     which ends in `route`: for an action with `judge: true` it asks the
-    estate's judge (`judge.ts`, `POST <JUDGE_URL>/v1/judge`, bounded by
-    `JUDGE_TIMEOUT_MS`; `readJudged` in `src/shared/change.ts` holds the
+    estate's judge (`judge.ts`, `POST <JUDGE_URL>/v1/judge` with
+    `JUDGE_TOKEN` as its bearer token, never logged, bounded by
+    `JUDGE_TIMEOUT_MS`; either setting unset is no judge; `readJudged` in `src/shared/change.ts` holds the
     answer to the kit's route rules, and an answer that breaks them is no
     answer) and lays the route on what the action and its rules already
     ask. The judge only adds: a route of no one leaves the run as the action
