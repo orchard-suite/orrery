@@ -896,7 +896,7 @@ never restate it.
     the Access page and kept in the `previews` setting. `open` in it is the
     one answer to whether a caller is in a preview. Only a person can be
     named, by the address they are kept under: an admin is in only when
-    named, a personal token is its person, and a view as someone is theirs.
+    named, a personal token is its person's agent, and a view as someone is theirs.
     A machine token and a source are in only once it is open to everyone.
   - `ground.ts` builds the ground of a blueprint that names one (`ground`
     on the blueprint, `GroundDef` in `src/shared/model.ts`), for one reader
@@ -1629,7 +1629,13 @@ never restate it.
   nothing more. What anyone else may do is a role given in the hub. Never
   map a claim to a permission, and never give the admin role in the hub.
 - Only a person is ever restricted. An admin, a machine access token, and a
-  source see everything. A personal token is the person.
+  source see everything. A personal token is its person's agent (ORY-2002):
+  the identity is the person's, with the token's name on `identity.agent`,
+  so their rules and view judge it; every row it writes carries
+  `detail.agent`, and every run it asks keeps `agent`. It never decides a
+  run or a schedule (`counts` in `actions.ts`, `decide` in `schedules.ts`).
+  Whether its person decides what it asks, as someone who did not ask, is
+  the deployment's `AGENT_PERSON_DECIDES`, read in `asked` and nowhere else.
 - A view in preview does not exist to a caller it is not open to. Its
   routes answer `404` as an unknown address does, its agent tool is not
   listed, and the web app draws no link, page, or control of it and asks for

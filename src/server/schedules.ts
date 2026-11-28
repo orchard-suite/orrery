@@ -335,6 +335,8 @@ export class Schedules {
 
   /** Approves or declines a schedule that waits. Approved, it fires next at its cadence. */
   async decide(id: string, approve: boolean, identity: Identity, note?: string): Promise<ActionSchedule> {
+    // An agent asks and never decides: its person decides, signed in (ORY-2002).
+    if (identity.agent) throw new ScheduleError(`An agent never decides a schedule: ${identity.name} decides it, signed in`, 403)
     if (!decides(identity)) throw new ScheduleError('Only someone who decides approvals approves a schedule', 403)
     const row = await this.held(id, identity)
     if (row.state !== 'awaiting') throw new ScheduleError(`The schedule is ${row.state}, not waiting for a decision`, 409)

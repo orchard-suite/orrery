@@ -141,14 +141,14 @@ export function authenticate(config: Config, sources: Sources, access: Access, l
       // A source holds no permission but the one an admin grants it on the source itself: defining actions.
       if (found.kind === 'source') c.set('identity', { ...nobody, kind: 'source', name: found.name, source: found.source!, permissions: sources.get(found.source!)?.actions ? ['actions.manage'] : [] })
       else if (found.kind === 'personal') {
-        // A personal token acts as the person who made it: their roles, what they may see, and their name on what it does.
+        // A personal token is its person's agent (ORY-2002): their roles and what they may see, with the agent, by the token's name, as who asks.
         const user = access.find(found.owner ?? '')
         if (!user) {
           log.warn('rejected personal token: its person is no longer here', { token: found.id, owner: found.owner })
           recordAuth(c.env.surface, 'revoked')
           return c.json({ error: 'This token belongs to someone who is no longer here', docs: SPEC }, 401)
         }
-        c.set('identity', { kind: 'user', name: user.email, admin: user.admin, roles: user.admin ? [ADMIN_ROLE, ...user.roles] : user.roles, permissions: user.admin ? PERMISSION_IDS : access.permissionsOf(user.roles), token: found.id })
+        c.set('identity', { kind: 'user', name: user.email, admin: user.admin, roles: user.admin ? [ADMIN_ROLE, ...user.roles] : user.roles, permissions: user.admin ? PERMISSION_IDS : access.permissionsOf(user.roles), token: found.id, agent: found.name })
         await access.touch(user.email)
       } else c.set('identity', accessTokenIdentity(found, access))
       recordAuth(c.env.surface, 'ok')
@@ -199,7 +199,7 @@ export function authenticate(config: Config, sources: Sources, access: Access, l
 /** Everything a request records in the activity log is recorded as its caller: while an admin views as someone, the admin. */
 export const acting: MiddlewareHandler<AppEnv> = (c, next) => {
   const id = c.get('identity')
-  return actingAs({ kind: actorKind(id), name: id.kind === 'source' ? id.source! : (id.viewAs?.by ?? id.name), ...(c.req.path === '/mcp' ? { door: 'mcp' as const } : {}) }, next)
+  return actingAs({ kind: actorKind(id), name: id.kind === 'source' ? id.source! : (id.viewAs?.by ?? id.name), ...(id.agent ? { agent: id.agent } : {}), ...(c.req.path === '/mcp' ? { door: 'mcp' as const } : {}) }, next)
 }
 
 /** The kind of actor a caller is recorded as: a run's own job calls with a token, and a caller nobody knows is the hub's own row. */

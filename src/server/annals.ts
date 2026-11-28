@@ -214,12 +214,15 @@ export function toEvent(row: Row): AnnalsEvent {
   if (change) return changeRecord(change, text(row.detail.reason))
   const d = row.detail
   const action = text(d.action)
-  // A product that carried a person's request is the one that acted, for them.
+  // A product that carried a person's request is the one that acted, for them; so is an agent holding their token (ORY-2002).
   const via = text(d.via)
+  const agent = text(d.agent)
   const actor: AnnalsEvent['actor'] = row.actor_kind === 'user' && row.actor
     ? via
       ? { kind: 'system', id: `token:${via}`, on_behalf_of: row.actor }
-      : person(row.actor)
+      : agent
+        ? { kind: 'agent', id: agent, on_behalf_of: row.actor }
+        : person(row.actor)
     : { kind: 'system', id: row.actor_kind === 'token' && row.actor ? `token:${row.actor}` : row.source ? `source:${row.source}` : 'orrery' }
   const at = row.at.toISOString()
   const event: AnnalsEvent = {

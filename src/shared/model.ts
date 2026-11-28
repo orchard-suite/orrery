@@ -1239,6 +1239,11 @@ export interface Identity {
   run?: string
   /** The personal token a person is calling with. A personal token cannot make tokens. */
   token?: string
+  /**
+   * Set for a personal token: the agent holding it, by the token's name (ORY-2002). The identity is its person's,
+   * so the rules, the view, and what it may do are theirs; the agent is who asks, and it never decides a run.
+   */
+  agent?: string
   /** Set while an admin views the hub as this person: the identity is theirs, and this names the admin who is really calling. */
   viewAs?: { by: string }
 }
@@ -1938,6 +1943,12 @@ export interface ActionRun {
   approvers?: AccessGrant[] | null
   /** The person a product asked it for, when the product asked as itself: data on the run, never its asker or a decider. A hub one release back sends none. */
   requestedFor?: string | null
+  /**
+   * The agent that asked for it with its person's token (ORY-2002). The run is its person's (`by`), and the agent
+   * asked it: where the hub lets a person decide what their agent asks, they decide it as someone who did not ask.
+   * Null for a run a person asked themselves. A hub one release back sends none.
+   */
+  agent?: string | null
   /**
    * Where the person who asked called from, as the hub read it from the request through the proxy header it trusts:
    * only on a run a person asked for themselves, signed in. A schedule's, a batch's, a product's, and a token's run hold none.

@@ -160,7 +160,15 @@ export function ActionRunPage({ id }: { id: string }) {
             <StateBadge run={r} large />
             {r.label && <span className="text-ink-200">{r.label}</span>}
             <span>
-              Asked by <span className="text-ink-100">{r.by}</span>
+              {r.agent ? (
+                <>
+                  Asked by the agent <span className="text-ink-100">{r.agent}</span> for <span className="text-ink-100">{r.by}</span>
+                </>
+              ) : (
+                <>
+                  Asked by <span className="text-ink-100">{r.by}</span>
+                </>
+              )}
               {r.requestedFor && (
                 <>
                   {' '}

@@ -1383,6 +1383,7 @@ issue it a token from the Sources page, then point a pusher at
 | `DISPATCH_EVERY_SECONDS` | `5` | How often runs are told to dispatch, and change events sent to it |
 | `DISPATCH_APPROVERS_GROUP` | (none) | A group on the desk that hears of a run waiting for approval when no rule names who decides it, or more than twenty people are named. Unset, such a run is for nobody by name |
 | `DISPATCH_REMIND_HOURS` | `24` | How long a run waits for approval before its deciders are told once more. `0` never reminds |
+| `AGENT_PERSON_DECIDES` | `false` | `true` lets a person decide a run their own agent asked for with their personal token, as someone who did not ask: the action's own approval and what its route asks. `false`, the agent and its person are one asker, and someone else decides. An agent never decides a run either way (docs/actions.md, Who asks) |
 | `JUDGE_URL`, `JUDGE_TOKEN` | (none) | The estate's judge ([Trellis](https://github.com/orchard-suite/trellis)) at its machine door, and a token it issued for the hub. With both, a run of an action with `judge: true` sends its change statement to `POST <JUDGE_URL>/v1/judge` with `Authorization: Bearer <JUDGE_TOKEN>` before it is queued, and waits at most three seconds for the answer. With either unset the judge is off, as Annals and dispatch are without their tokens: the hub still starts, says so in its log, and every such run goes to people. Down, slow, refusing the token (401, 403), or answering what is not a route, the run goes to people too (docs/actions.md, Approval by the judge) |
 | `DISPATCH_PUBLIC_URL` | (none) | The desk's address for people. With it, the profile menu links each person to the page where they choose how they are told |
 | `CLIENT_ADDRESS_HEADER` | `x-real-ip` | The one header the hub reads a caller's address from, for telemetry and for an action's `by.address` (docs/actions.md, Where the caller is). The ingress must write the caller's real address into it over whatever the caller sent, and strip anything a caller could forge; no other header is read. `none` trusts no header |
@@ -1792,7 +1793,10 @@ Two hostnames, two ingress policies. The UI host sits behind an Entra login
 proxy that passes the signed ID token (`AUTH_ISSUER`, `AUTH_AUDIENCE`); the
 ingest host reaches the machine port directly and accepts only tokens. One
 replica, one Postgres. An agent or script that works on a person's behalf uses
-that person's personal token on the ingest host, never the session port.
+a personal token its person made for it, named for it, on the ingest host,
+never the session port. It is that person's agent: it sees what they see and
+may do what they may do, the activity log and every run it asks name it, and
+it never decides a run.
 An app a person signs in to, such as a chat bot, can act for them the same way:
 with `AUTH_API_SCOPE` set, it asks the issuer for an access token to the hub's
 API with that scope and sends it to the ingest host. The hub checks the

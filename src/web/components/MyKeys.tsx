@@ -7,9 +7,10 @@ import { ago, when } from '../format.ts'
 import { Button, Empty, ErrorNote, input, Kicker, Panel } from './ui.tsx'
 
 /**
- * A person's own API keys. An agent given one acts as the person: it sees
- * what they see, may do what they may do, and what it does is theirs in the
- * activity log. A key is shown once, when it is made or rotated.
+ * A person's own API keys. Each is an agent of theirs, by the key's name
+ * (ORY-2002): it sees what they see and may do what they may do, the activity
+ * log says it asked, and it never decides a run. A key is shown once, when it
+ * is made or rotated.
  *
  * A modal dialog: the page behind is inert, Escape closes it, and focus goes
  * back to what opened it.
@@ -39,7 +40,7 @@ export function MyKeys({ onClose }: { onClose: () => void }) {
             <span className="ml-auto" />
             <Button onClick={onClose}>Close</Button>
           </div>
-          <p className="px-4 pt-3 text-sm text-ink-400">Give a key to your own agent or script. It calls the API as you: it sees only what you see, and what it changes shows as yours in the activity log.</p>
+          <p className="px-4 pt-3 text-sm text-ink-400">Give a key to your own agent or script, named for it. It calls the API for you: it sees only what you see, the activity log says it asked, and it never approves anything.</p>
           {shown && (
             <div className="mx-4 mt-3 rounded-sm border border-amber/50 bg-ink-850 p-3">
               <Kicker>Copy it now: it is shown once</Kicker>
@@ -57,7 +58,7 @@ export function MyKeys({ onClose }: { onClose: () => void }) {
               issue.mutate(name.trim(), { onSuccess: (made) => (setShown(made), setName('')) })
             }}
           >
-            <input className={`${input} flex-1`} aria-label="What the key is for" placeholder="What it is for, such as my laptop agent" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
+            <input className={`${input} flex-1`} aria-label="What the key is for" placeholder="The agent it is for, such as agent-laptop" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
             <Button type="submit" kind="solid" disabled={issue.isPending || !name.trim()}>
               Create key
             </Button>

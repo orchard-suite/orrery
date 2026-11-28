@@ -267,7 +267,7 @@ describe('a run made as a person that waits for approval', () => {
     const said = await tool(agentKey, 'run_action', { action: 'gated', entity: 'account:ada' })
     expect(said).toMatchObject({ state: 'awaiting', approve: `http://localhost:8080/actions/runs/${said.run as string}` })
     expect(said.next).toContain('runs as whoever approves it')
-    expect((said.log as string[])[0]).toBe('requested by dev@example.org; waiting for approval; it runs as whoever approves it')
+    expect((said.log as string[])[0]).toBe('requested by agent, the agent of dev@example.org; waiting for approval; it runs as whoever approves it')
     expect(calls).toHaveLength(0)
   })
 

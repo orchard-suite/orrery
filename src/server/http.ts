@@ -2093,7 +2093,7 @@ export function createApp(deps: HttpDeps): Hono<AppEnv> {
     return c.json({ ok: true })
   })
 
-  // A person's own tokens: an agent holding one acts as the person, sees what they see, and its activity is theirs.
+  // A person's own tokens: each is an agent of theirs, by its name (ORY-2002). It sees what they see, its activity names it, and it never decides a run.
   const mine = (c: Context<AppEnv>) => {
     const id = c.get('identity')
     if (id.kind !== 'user' || (config.AUTH_MODE === 'none' && id.name === 'local')) throw new AdminOnly('Personal tokens are for a person who signs in')

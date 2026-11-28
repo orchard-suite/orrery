@@ -141,6 +141,12 @@ const schema = z.object({
   JUDGE_URL: z.string().url().optional(),
   /** A token the judge issued for the hub, sent as `Authorization: Bearer <token>` on every call to it. */
   JUDGE_TOKEN: z.string().optional(),
+  /**
+   * `true` lets a person decide a run their own agent asked for with their personal token, as someone who did not ask:
+   * the action's own approval and what its route asks (ORY-2002). `false`, a person's agent and the person are one
+   * asker, and someone else decides. The agent never decides either way.
+   */
+  AGENT_PERSON_DECIDES: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   /** The dispatch desk's address for people. Set, the web app's profile menu links to the page where a person says how they are told. */
   DISPATCH_PUBLIC_URL: z.string().url().optional(),
   /**

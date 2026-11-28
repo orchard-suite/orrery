@@ -21,6 +21,8 @@ export interface Who {
   name: string
   /** The door the request came through when it was an agent's tool, so a row says a change was an agent's. */
   door?: 'mcp'
+  /** The agent asking with its person's token (ORY-2002): the row is the person's, and says the agent asked. */
+  agent?: string
 }
 
 const acting = new AsyncLocalStorage<Who>()
@@ -72,6 +74,7 @@ interface Recorded {
 function recorded(kind: string, ref: Partial<EntityRef> | null, source: string | null, actor: string | null, detail: Record<string, unknown>, at: Date, outcome: Outcome): Recorded {
   const who = acting.getStore()
   if (who?.door) detail = { ...detail, door: who.door }
+  if (who?.agent) detail = { ...detail, agent: who.agent }
   const person = who && who.kind !== 'source' ? who : null
   const from = source ?? (who?.kind === 'source' ? who.name : null)
   const actorKind: ActorKind = person ? person.kind : from && from !== 'ui' ? 'source' : 'hub'

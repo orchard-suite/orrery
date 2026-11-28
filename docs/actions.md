@@ -1636,6 +1636,24 @@ the newest round of an ask is ever decided. A product that hears a person's
 answer somewhere else, such as a comment on its ticket, asks its next round
 this way without waiting for anyone to send the run back.
 
+### Who asks
+
+A run a person's agent asks for, with a personal token its person made for
+it, is the person's run (`by`) and the agent's ask (`agent`, the token's
+name). The run page says `Asked by the agent <name> for <person>`, its log
+says `requested by <name>, the agent of <person>`, and every activity row the
+agent writes carries `detail.agent`, so Annals records the agent as the
+actor, for its person. The agent sees and may run what its person may, and it
+never decides a run or a schedule: its person, or someone else, decides it
+signed in.
+
+Whether the person decides what their own agent asks is the deployment's
+(`AGENT_PERSON_DECIDES`). With `true`, they are not its asker: they may give
+the action's own approval and what its route asks, as anyone else would, and
+they are told it waits. With `false`, the default, the agent and its person
+are one asker, and someone else decides it. Either way an agent's yes counts
+for nothing.
+
 `selfApproval: true` lets the person who asked approve their own run too,
 when they may approve it at all. It is for an estate with one approver: the
 run still names who asked and who approved, its log says `approved by <them>,
