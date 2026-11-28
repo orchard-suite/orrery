@@ -3438,16 +3438,14 @@ refused, answered something that is not a table, or answered more than a
 tool call carries (ask fewer weeks); and 2 when it was asked wrongly.
 
 The gate's numbers as two datasets, each read by a saved query or a report
-as `$data:<id>`. A dataset names the entity it reads, here the estate's
-Annals:
+as `$data:<id>`. Like the telemetry tools above, they name no entity, so an
+admin and the people the dataset's `access` names read them:
 
 ```yaml
 - id: gate_families
   title: Change gate by family
   description: Needless asks, misses, unknowns, and the wait, a row a week and effect family, from Annals.
-  blueprint: workload
   dataset:
-    entity: workload:annals
     fresh: 1h
     columns:
       - { id: week, title: Week, type: datetime }
@@ -3459,14 +3457,13 @@ Annals:
       - { id: coverage, title: Coverage, type: number }
       - { id: wait_median, title: Median wait, type: number }
   backend: { type: runner, runner: telemetry-runner, command: [/annals-read, gate-families, --weeks, "12"], timeout: 30s }
-  tool: { tier: read, from: "workload:annals" }
+  access: { audiences: [platform] }
+  tool: { tier: read }
 
 - id: gate_drafts
   title: Change gate drafts
   description: Each draft gate pack's asks it would have sent to no one, and their harm, a row a week, from Annals.
-  blueprint: workload
   dataset:
-    entity: workload:annals
     fresh: 1h
     columns:
       - { id: week, title: Week, type: datetime }
@@ -3475,7 +3472,8 @@ Annals:
       - { id: harmed, title: Of those, did harm, type: number }
       - { id: coverage, title: Coverage, type: number }
   backend: { type: runner, runner: telemetry-runner, command: [/annals-read, gate-drafts, --weeks, "12"], timeout: 30s }
-  tool: { tier: read, from: "workload:annals" }
+  access: { audiences: [platform] }
+  tool: { tier: read }
 ```
 
 A report keeps one edition a week when its publish action is scheduled
