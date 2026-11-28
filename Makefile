@@ -39,6 +39,7 @@ go: ## build the Go binaries into bin/
 	go build -o bin/azure-restart ./cmd/azure-restart
 	go build -o bin/azure-job-start ./cmd/azure-job-start
 	go build -o bin/telemetry-query ./cmd/telemetry-query
+	go build -o bin/annals-read ./cmd/annals-read
 	go build -o bin/job-starter ./cmd/job-starter
 
 docker: ## build every image for linux/amd64

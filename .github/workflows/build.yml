@@ -10,8 +10,8 @@ name: Build
 #   orrery-access-runner the runner carrying entra-grant, for access actions
 #   orrery-azure-runner  the runner carrying azure-restart and azure-job-start, for
 #                        restart and job actions
-#   orrery-telemetry-runner the runner carrying telemetry-query, for tools that
-#                        read logs and metrics
+#   orrery-telemetry-runner the runner carrying telemetry-query and annals-read,
+#                        for tools that read logs, metrics, and Annals' tables
 #   orrery-job-starter   the starter of one container a run, for job actions
 # to ghcr.io/orchard-suite/<name>. The GitHub Container Registry packages are
 # public, so a cluster pulls them without a secret; pin them by digest.

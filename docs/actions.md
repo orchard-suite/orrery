@@ -1034,8 +1034,9 @@ copy `/runner` in from `orrery-runner`. `orrery-access-runner` is one: the
 runner and `entra-grant` (Granting access in Entra, below). `orrery-azure-runner`
 is another: the runner, `azure-restart` (Restarting Azure resources, below),
 and `azure-job-start` (Starting Azure Container Apps jobs, below).
-`orrery-telemetry-runner` is a third: the runner and `telemetry-query`
-(Reading logs and metrics, below).
+`orrery-telemetry-runner` is a third: the runner, `telemetry-query`
+(Reading logs and metrics, below), and `annals-read` (Reading Annals'
+tables, below).
 
 **`job`** starts one container for the run, on a platform the estate runs.
 
@@ -3403,6 +3404,82 @@ lend them inside a person's request, give each a `blueprint` and a
 The runner reads whatever its addresses and tokens let it read, for every
 caller who holds the tier. Bound that at the backend: a token or a tenant
 that sees only what these tools should show.
+
+## Reading Annals' tables
+
+`cmd/annals-read` reads a table Annals publishes and prints it as the
+`{ columns, rows }` a dataset or a report reads (Tools, above, and
+docs/modelling.md, Datasets). It only reads. Annals' address and token come
+from the runner's environment, never from an argument, and each command
+asks one fixed path. The `orrery-telemetry-runner` image carries it, at
+`/annals-read`.
+
+```
+annals-read gate-families [--weeks 12]
+annals-read gate-drafts [--weeks 12]
+```
+
+`gate-families` is the change gate's four numbers, one row a week and
+effect family, each with its coverage: needless asks, misses, unknowns,
+and the wait, and whether the family was scored or its watch too blind.
+`gate-drafts` is each draft gate pack's replay, one row a week: how many
+asks it would have sent to no one, and how many of those did harm. What
+each column counts is Annals' own to say, in its README. `--weeks` is how
+many weeks, the current one counted, from 1 to 52; empty or left out is
+Annals' default, 12.
+
+| Variable | What it is |
+| --- | --- |
+| `ANNALS_URL` | Annals' API port, such as `http://annals.example.org:8081`. |
+| `ANNALS_TOKEN` | A token Annals issued. These tables are counts, so any token reads them. |
+
+It exits 0 when Annals answered a table; 1 when Annals did not answer,
+refused, answered something that is not a table, or answered more than a
+tool call carries (ask fewer weeks); and 2 when it was asked wrongly.
+
+The gate's numbers as two datasets, each read by a saved query or a report
+as `$data:<id>`. A dataset names the entity it reads, here the estate's
+Annals:
+
+```yaml
+- id: gate_families
+  title: Change gate by family
+  description: Needless asks, misses, unknowns, and the wait, a row a week and effect family, from Annals.
+  blueprint: workload
+  dataset:
+    entity: workload:annals
+    fresh: 1h
+    columns:
+      - { id: week, title: Week, type: datetime }
+      - { id: family, title: Family }
+      - { id: score, title: Score }
+      - { id: needless, title: Needless asks, type: number }
+      - { id: misses, title: Misses, type: number }
+      - { id: unknowns, title: Unknowns, type: number }
+      - { id: coverage, title: Coverage, type: number }
+      - { id: wait_median, title: Median wait, type: number }
+  backend: { type: runner, runner: telemetry-runner, command: [/annals-read, gate-families, --weeks, "12"], timeout: 30s }
+  tool: { tier: read, from: "workload:annals" }
+
+- id: gate_drafts
+  title: Change gate drafts
+  description: Each draft gate pack's asks it would have sent to no one, and their harm, a row a week, from Annals.
+  blueprint: workload
+  dataset:
+    entity: workload:annals
+    fresh: 1h
+    columns:
+      - { id: week, title: Week, type: datetime }
+      - { id: pack, title: Draft pack }
+      - { id: to_no_one, title: Would send to no one, type: number }
+      - { id: harmed, title: Of those, did harm, type: number }
+      - { id: coverage, title: Coverage, type: number }
+  backend: { type: runner, runner: telemetry-runner, command: [/annals-read, gate-drafts, --weeks, "12"], timeout: 30s }
+  tool: { tier: read, from: "workload:annals" }
+```
+
+A report keeps one edition a week when its publish action is scheduled
+weekly on it (docs/modelling.md, Running a report).
 
 ## Granting access in Entra
 

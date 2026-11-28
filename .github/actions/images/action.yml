@@ -67,7 +67,7 @@ runs:
         CGO_ENABLED: "0"
       run: |
         rm -f "$RUNNER_TEMP/go-build.status"
-        nohup bash -c 'go build -ldflags "-s -w -X main.version=${VERSION}" -o out/ ./cmd/pusher-k8s ./cmd/pusher-entra ./cmd/orrery ./cmd/runner ./cmd/entra-grant ./cmd/azure-restart ./cmd/azure-job-start ./cmd/telemetry-query ./cmd/job-starter; echo $? > "$RUNNER_TEMP/go-build.status"' > "$RUNNER_TEMP/go-build.log" 2>&1 &
+        nohup bash -c 'go build -ldflags "-s -w -X main.version=${VERSION}" -o out/ ./cmd/pusher-k8s ./cmd/pusher-entra ./cmd/orrery ./cmd/runner ./cmd/entra-grant ./cmd/azure-restart ./cmd/azure-job-start ./cmd/telemetry-query ./cmd/annals-read ./cmd/job-starter; echo $? > "$RUNNER_TEMP/go-build.status"' > "$RUNNER_TEMP/go-build.log" 2>&1 &
     # The web app, built from this tag's source: its version is the one the
     # page compares with the hub's to offer a reload.
     - name: Web app

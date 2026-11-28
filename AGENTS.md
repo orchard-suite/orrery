@@ -1591,7 +1591,9 @@ never restate it.
   Azure app or virtual machine for a runner job; `cmd/azure-job-start` starts
   an Azure Container Apps job and follows it to its end for a runner job;
   `cmd/telemetry-query` reads logs from Loki and metrics from Prometheus for
-  a runner's tool, and only reads; `cmd/job-starter` starts one container
+  a runner's tool, and only reads; `cmd/annals-read` reads a table Annals
+  publishes (the change gate's weekly numbers) for a runner's tool, one
+  fixed path a command, and only reads; `cmd/job-starter` starts one container
   for each run of a `job` action and keeps the hub told of it: `Starter` in
   `starter.go` is the whole of what it decides, over a `Platform` (start,
   seen, stop) that `kubernetes.go` and `azure.go` each are, and it keeps no

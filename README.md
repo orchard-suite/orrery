@@ -1280,6 +1280,11 @@ for a tool a runner carries out, so an agent is lent "read the logs" and
 `orrery-telemetry-runner` image is the runner with it. `docs/actions.md`
 (Reading logs and metrics) has its two commands and a tool for each.
 
+`cmd/annals-read` reads a table Annals publishes, such as the change
+gate's weekly numbers, and prints it for a dataset or a report. It only
+reads, and the telemetry runner carries it too. `docs/actions.md`
+(Reading Annals' tables) has its commands and the gate's two datasets.
+
 `cmd/orrery` is the command line. Its machine commands are for shell jobs
 and hooks, with a source token (a person's commands are under Command line,
 above); `push` offers the blueprints in the file, then writes its entities:
@@ -2318,6 +2323,7 @@ cmd/entra-grant  gives a person access in Entra, for a runner job
 cmd/azure-restart restarts an Azure app or virtual machine, for a runner job
 cmd/azure-job-start starts an Azure Container Apps job, for a runner job
 cmd/telemetry-query reads logs from Loki and metrics from Prometheus, for a runner's tool
+cmd/annals-read  reads a table Annals publishes, for a runner's tool
 cmd/job-starter starts one container for each run of a job action, on Kubernetes or Azure Container Apps
 cmd/internal   workload identity sign-in, the Microsoft Graph client the Entra commands share, and the Container Apps jobs client
 cmd/runner     health check runner

@@ -1,7 +1,8 @@
 # The Go binaries: the k8s pusher, the Entra pusher, the generic CLI, the
 # runner, the access runner (the runner carrying entra-grant), the Azure
 # runner (the runner carrying azure-restart and azure-job-start), the
-# telemetry runner (the runner carrying telemetry-query), and the job starter.
+# telemetry runner (the runner carrying telemetry-query and annals-read), and
+# the job starter.
 # Build with
 #   docker build -f go.Dockerfile --target pusher-k8s .
 #   docker build -f go.Dockerfile --target pusher-entra .
@@ -32,6 +33,7 @@ RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION}" -o /out/p
  && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION}" -o /out/azure-restart ./cmd/azure-restart \
  && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION}" -o /out/azure-job-start ./cmd/azure-job-start \
  && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION}" -o /out/telemetry-query ./cmd/telemetry-query \
+ && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION}" -o /out/annals-read ./cmd/annals-read \
  && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION}" -o /out/job-starter ./cmd/job-starter
 
 FROM scratch AS prebuilt
@@ -76,11 +78,13 @@ COPY --from=binaries /out/azure-restart /azure-restart
 COPY --from=binaries /out/azure-job-start /azure-job-start
 ENTRYPOINT ["/runner"]
 
-# A runner whose tools read logs and metrics: the runner, and telemetry-query
-# for its commands to call. It reads Loki and Prometheus and changes nothing.
+# A runner whose tools read logs, metrics, and the tables Annals publishes:
+# the runner, and telemetry-query and annals-read for its commands to call.
+# It reads Loki, Prometheus, and Annals and changes nothing.
 FROM base AS telemetry-runner
 COPY --from=binaries /out/runner /runner
 COPY --from=binaries /out/telemetry-query /telemetry-query
+COPY --from=binaries /out/annals-read /annals-read
 ENTRYPOINT ["/runner"]
 
 # The job starter: it starts one container for each run of a `job` action, on
