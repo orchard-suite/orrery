@@ -1,7 +1,9 @@
 .PHONY: check db api land test build go docker
 
-# The full check runs here before a commit lands, and again in CI.
-land: check ## check, then land (from a worktree: make land BRANCH=<branch>)
+# Lands main: release-damnit land runs the config's check (make check) on
+# exactly what lands and signs its proof, which the release verifies. CI's
+# test job runs the same check again.
+land: ## land, running the check and signing its proof (from a worktree: make land BRANCH=<branch>)
 	release-damnit land $(BRANCH)
 
 check: db api ## typecheck, test, build web, vet and test Go, judge the API

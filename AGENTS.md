@@ -1855,8 +1855,9 @@ never restate it.
 ## Delivery
 
 Agents push to `main`. Commit on `main` and land with `make land` (`make land
-BRANCH=<branch>` from a worktree). It runs `make check`, then
-`release-damnit land`. CI runs the same check on GitHub's hosted runners
+BRANCH=<branch>` from a worktree). It runs `release-damnit land`, which runs
+the config's check (`make check`) on exactly what lands and signs a landing
+proof that the release verifies. CI runs the same check on GitHub's hosted runners
 (`test.yml`, with Postgres as a service), then versions every `feat` and
 `fix` since the last release tag, tags it, and builds and signs the tag's
 images, plugin, and command line under `ghcr.io/orchard-suite`.
