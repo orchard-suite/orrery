@@ -591,20 +591,21 @@ describe('the delegates a hub is set up with', () => {
     const behalf = new Behalf({ ops: { scope: 's', urls: ['https://ops.example.org/'] } }, { tenantId: 't', clientId: 'c', tokenFile: join(dir, 'token'), authorityHost: 'https://login.example.com/' }, boxIn(dir), async (_url, init) => {
       const form = new URLSearchParams(String(init.body))
       asked.push(form)
-      return new Response(JSON.stringify({ access_token: `t${asked.length}`, expires_in: 120, ...(form.get('scope')?.includes('offline_access') || form.get('grant_type') === 'refresh_token' ? { refresh_token: `r${asked.length}` } : {}) }))
+      return new Response(JSON.stringify({ access_token: `t${asked.length}`, expires_in: 120, ...(form.get('scope')?.includes('offline_access') || form.get('grant_type') === 'refresh_token' ? { refresh_token: `refresh-${asked.length}` } : {}) }))
     }, () => clock)
     const url = 'https://ops.example.org/x'
     await expect(behalf.hold('ops', 'a@example.org')).rejects.toThrow(/own signed-in approval/)
     const held = (await askingAs('a@example.org', 'tok-a', () => behalf.hold('ops', 'a@example.org')))!
     expect(asked[0]!.get('scope')).toBe('s offline_access')
-    expect(held).not.toContain('r1')
+    // A '-' is never in the box's base64, so this cannot match by chance.
+    expect(held).not.toContain('refresh-1')
     // The same request holds the same grant for every run it approves.
     expect(await askingAs('a@example.org', 'tok-a', () => behalf.hold('ops', 'a@example.org'))).toBe(held)
     expect(asked).toHaveLength(1)
     // Long after the approval, with no request under way and the first token ended, the grant asks for a fresh one.
     clock = 10 * 60_000
     expect(await behalf.tokenFor('ops', 'a@example.org', url, held)).toBe('t2')
-    expect(Object.fromEntries(asked[1]!)).toEqual(({ grant_type: 'refresh_token', refresh_token: 'r1', scope: 's', client_id: 'c', client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: 't' }))
+    expect(Object.fromEntries(asked[1]!)).toEqual(({ grant_type: 'refresh_token', refresh_token: 'refresh-1', scope: 's', client_id: 'c', client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: 't' }))
     await expect(behalf.tokenFor('ops', 'b@example.org', url, held)).rejects.toThrow(/a@example.org's/)
     await expect(behalf.tokenFor('ops', 'a@example.org', 'https://elsewhere.example.org/x', held)).rejects.toThrow(/may not be called at/)
     await expect(behalf.tokenFor('ops', 'a@example.org', url, 'not-sealed')).rejects.toThrow(/cannot be read/)

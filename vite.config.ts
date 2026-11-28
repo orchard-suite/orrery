@@ -28,9 +28,12 @@ export default defineConfig({
   test: {
     root: '.',
     include: ['src/**/*.test.ts'],
-    setupFiles: ['src/web/test-storage.ts'],
+    // Files run side by side; each worker has a database of its own.
+    setupFiles: ['src/web/test-storage.ts', 'src/server/test-database.ts'],
     env: { LOG_LEVEL: 'error' },
-    fileParallelism: false,
+    // Each worker's hubs hold connections; this keeps them under Postgres's
+    // default of 100.
+    maxWorkers: 6,
     // Each file starts a hub against Postgres. On a runner whose disk is
     // shared and busy that can take far longer than on a laptop.
     testTimeout: 120_000,

@@ -7,12 +7,12 @@ import { createLogger } from './log.ts'
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://orrery:orrery@localhost:5433/orrery'
 // A database of its own, so a fresh schema can be built from nothing.
-const NAME = 'orrery_migrate_test'
 const url = (() => {
   const u = new URL(DATABASE_URL)
-  u.pathname = `/${NAME}`
+  u.pathname = `${u.pathname}_migrate`
   return u.toString()
 })()
+const NAME = new URL(url).pathname.slice(1)
 const log = createLogger('db')
 
 async function admin<T>(fn: (client: pg.Client) => Promise<T>): Promise<T> {
