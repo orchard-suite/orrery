@@ -202,6 +202,12 @@ All notable changes to this project will be documented in this file. See [standa
 * hide a column on a grid with no saved layout ([bf0b005](https://github.com/orchard-suite/orrery/commit/bf0b005b3df3da0a23aeab19002eefe03cf68a9c))
 * keep blueprint fields in the order written ([4606692](https://github.com/orchard-suite/orrery/commit/460669295d0c49554ce15b4d3a42a6f1b8c648f0))
 
+## [2.5.0](https://github.com/orchard-suite/orrery/compare/v2.4.0...v2.5.0) (2026-11-28)
+
+### Features
+
+* **orrery:** send the judge a bearer token ([336fd1c](https://github.com/orchard-suite/orrery/commit/336fd1cf245d7668f6bf464e75693b6dd40df0b0))
+
 ## [2.4.0](https://github.com/orchard-suite/orrery/compare/v2.3.2...v2.4.0) (2026-11-28)
 
 ### Features
