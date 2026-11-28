@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/orchard-suite/orrery/v2/cmd/internal/containerapps"
+	"github.com/orchard-suite/orrery/v3/cmd/internal/containerapps"
 )
 
 const (

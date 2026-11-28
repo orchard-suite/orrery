@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/orchard-suite/orrery/v2/cmd/internal/containerapps"
+	"github.com/orchard-suite/orrery/v3/cmd/internal/containerapps"
 )
 
 // apiVersion is the Container Apps API it speaks.

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/orchard-suite/orrery/v2/sdk"
+	"github.com/orchard-suite/orrery/v3/sdk"
 )
 
 // GalleryTag marks a service principal an admin added as an enterprise app,

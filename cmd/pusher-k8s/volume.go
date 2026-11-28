@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/orchard-suite/orrery/v2/sdk"
+	"github.com/orchard-suite/orrery/v3/sdk"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )

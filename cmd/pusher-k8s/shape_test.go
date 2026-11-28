@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/orchard-suite/orrery/v2/sdk"
+	"github.com/orchard-suite/orrery/v3/sdk"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"

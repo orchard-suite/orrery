@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/orchard-suite/orrery/v2/cmd/internal/graph"
+	"github.com/orchard-suite/orrery/v3/cmd/internal/graph"
 )
 
 // DefaultRoleID is the role Entra gives an assignment to an app that defines

@@ -23,7 +23,7 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/orchard-suite/orrery/v2/sdk"
+	"github.com/orchard-suite/orrery/v3/sdk"
 )
 
 var version = "dev"

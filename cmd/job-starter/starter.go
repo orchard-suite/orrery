@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/orchard-suite/orrery/v2/sdk"
+	"github.com/orchard-suite/orrery/v3/sdk"
 )
 
 // Job is a run the hub handed over to be started: what it rendered, and the

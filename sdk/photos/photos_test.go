@@ -15,7 +15,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/orchard-suite/orrery/v2/sdk"
+	"github.com/orchard-suite/orrery/v3/sdk"
 )
 
 // photoOf is a w by h PNG: red on its left half, blue on its right, with

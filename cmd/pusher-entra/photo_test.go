@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/orchard-suite/orrery/v2/cmd/internal/graph"
-	"github.com/orchard-suite/orrery/v2/sdk/photos"
+	"github.com/orchard-suite/orrery/v3/cmd/internal/graph"
+	"github.com/orchard-suite/orrery/v3/sdk/photos"
 )
 
 func TestPhotosOnIsOnUnlessTurnedOff(t *testing.T) {

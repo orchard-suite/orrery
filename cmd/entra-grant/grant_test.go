@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/orchard-suite/orrery/v2/cmd/internal/graph"
+	"github.com/orchard-suite/orrery/v3/cmd/internal/graph"
 )
 
 // fakeGraph holds one app with one role, one user, a group, and a dynamic
