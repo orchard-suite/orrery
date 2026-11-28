@@ -99,132 +99,50 @@ runs:
         if [ ! -f "$RUNNER_TEMP/go-build.status" ]; then echo "The Go programs did not compile in 20 minutes" >&2; exit 1; fi
         [ "$(cat "$RUNNER_TEMP/go-build.status")" = 0 ] || exit 1
         ls -l out
-    - name: k8s pusher
-      id: pusher-k8s
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: go.Dockerfile
-        target: pusher-k8s
-        build-args: |
-          BINARIES=prebuilt
-          VERSION=${{ steps.version.outputs.version }}
-        platforms: linux/amd64
-        # By digest only: the tags come last, once the image is signed.
-        outputs: type=image,name=ghcr.io/orchard-suite/orrery-pusher-k8s,push-by-digest=true,name-canonical=true,push=true
-        labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-    - name: Entra pusher
-      id: pusher-entra
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: go.Dockerfile
-        target: pusher-entra
-        build-args: |
-          BINARIES=prebuilt
-          VERSION=${{ steps.version.outputs.version }}
-        platforms: linux/amd64
-        # By digest only: the tags come last, once the image is signed.
-        outputs: type=image,name=ghcr.io/orchard-suite/orrery-pusher-entra,push-by-digest=true,name-canonical=true,push=true
-        labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-    - name: CLI
-      id: cli
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: go.Dockerfile
-        target: cli
-        build-args: |
-          BINARIES=prebuilt
-          VERSION=${{ steps.version.outputs.version }}
-        platforms: linux/amd64
-        # By digest only: the tags come last, once the image is signed.
-        outputs: type=image,name=ghcr.io/orchard-suite/orrery-cli,push-by-digest=true,name-canonical=true,push=true
-        labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-    - name: Runner
-      id: runner
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: go.Dockerfile
-        target: runner
-        build-args: |
-          BINARIES=prebuilt
-          VERSION=${{ steps.version.outputs.version }}
-        platforms: linux/amd64
-        # By digest only: the tags come last, once the image is signed.
-        outputs: type=image,name=ghcr.io/orchard-suite/orrery-runner,push-by-digest=true,name-canonical=true,push=true
-        labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-    - name: Access runner
-      id: access-runner
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: go.Dockerfile
-        target: access-runner
-        build-args: |
-          BINARIES=prebuilt
-          VERSION=${{ steps.version.outputs.version }}
-        platforms: linux/amd64
-        # By digest only: the tags come last, once the image is signed.
-        outputs: type=image,name=ghcr.io/orchard-suite/orrery-access-runner,push-by-digest=true,name-canonical=true,push=true
-        labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-    - name: Azure runner
-      id: azure-runner
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: go.Dockerfile
-        target: azure-runner
-        build-args: |
-          BINARIES=prebuilt
-          VERSION=${{ steps.version.outputs.version }}
-        platforms: linux/amd64
-        # By digest only: the tags come last, once the image is signed.
-        outputs: type=image,name=ghcr.io/orchard-suite/orrery-azure-runner,push-by-digest=true,name-canonical=true,push=true
-        labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-    - name: Telemetry runner
-      id: telemetry-runner
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: go.Dockerfile
-        target: telemetry-runner
-        build-args: |
-          BINARIES=prebuilt
-          VERSION=${{ steps.version.outputs.version }}
-        platforms: linux/amd64
-        # By digest only: the tags come last, once the image is signed.
-        outputs: type=image,name=ghcr.io/orchard-suite/orrery-telemetry-runner,push-by-digest=true,name-canonical=true,push=true
-        labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-    - name: Job starter
-      id: job-starter
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: go.Dockerfile
-        target: job-starter
-        build-args: |
-          BINARIES=prebuilt
-          VERSION=${{ steps.version.outputs.version }}
-        platforms: linux/amd64
-        # By digest only: the tags come last, once the image is signed.
-        outputs: type=image,name=ghcr.io/orchard-suite/orrery-job-starter,push-by-digest=true,name-canonical=true,push=true
-        labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+    # The eight Go images at once: each only copies its program onto the
+    # same base, so they wait on nothing but the registry.
+    - name: Go images
+      id: go
+      shell: bash
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        SOURCE: https://github.com/${{ github.repository }}
+      run: |
+        dir=$(mktemp -d)
+        for target in pusher-k8s pusher-entra cli runner access-runner azure-runner telemetry-runner job-starter; do
+          ( docker buildx build . -f go.Dockerfile --target "$target" --platform linux/amd64 \
+              --build-arg BINARIES=prebuilt --build-arg VERSION="$VERSION" \
+              --label org.opencontainers.image.source="$SOURCE" \
+              --output "type=image,name=ghcr.io/orchard-suite/orrery-$target,push-by-digest=true,name-canonical=true,push=true" \
+              --metadata-file "$dir/$target.json" ) > "$dir/$target.log" 2>&1 &
+          echo "$! $target" >> "$dir/jobs"
+        done
+        failed=0
+        while read -r pid target; do
+          if wait "$pid"; then echo "built $target"; else echo "FAILED $target" >&2; failed=1; fi
+          cat "$dir/$target.log"
+        done < "$dir/jobs"
+        [ "$failed" = 0 ] || exit 1
+        # By digest only: the tags come last, once each image is signed.
+        for target in pusher-k8s pusher-entra cli runner access-runner azure-runner telemetry-runner job-starter; do
+          digest=$(jq -r '."containerimage.digest"' "$dir/$target.json")
+          case "$digest" in sha256:*) ;; *) echo "no digest for $target" >&2; exit 1 ;; esac
+          echo "${target//-/_}=$digest" >> "$GITHUB_OUTPUT"
+        done
     - name: Sign and attest the images
       shell: bash
       env:
         IDENTITY: ^https://github.com/${{ github.repository }}/
         IMAGES: |
           ghcr.io/orchard-suite/orrery@${{ steps.hub.outputs.digest }}
-          ghcr.io/orchard-suite/orrery-pusher-k8s@${{ steps.pusher-k8s.outputs.digest }}
-          ghcr.io/orchard-suite/orrery-pusher-entra@${{ steps.pusher-entra.outputs.digest }}
-          ghcr.io/orchard-suite/orrery-cli@${{ steps.cli.outputs.digest }}
-          ghcr.io/orchard-suite/orrery-runner@${{ steps.runner.outputs.digest }}
-          ghcr.io/orchard-suite/orrery-access-runner@${{ steps.access-runner.outputs.digest }}
-          ghcr.io/orchard-suite/orrery-azure-runner@${{ steps.azure-runner.outputs.digest }}
-          ghcr.io/orchard-suite/orrery-telemetry-runner@${{ steps.telemetry-runner.outputs.digest }}
-          ghcr.io/orchard-suite/orrery-job-starter@${{ steps.job-starter.outputs.digest }}
+          ghcr.io/orchard-suite/orrery-pusher-k8s@${{ steps.go.outputs.pusher_k8s }}
+          ghcr.io/orchard-suite/orrery-pusher-entra@${{ steps.go.outputs.pusher_entra }}
+          ghcr.io/orchard-suite/orrery-cli@${{ steps.go.outputs.cli }}
+          ghcr.io/orchard-suite/orrery-runner@${{ steps.go.outputs.runner }}
+          ghcr.io/orchard-suite/orrery-access-runner@${{ steps.go.outputs.access_runner }}
+          ghcr.io/orchard-suite/orrery-azure-runner@${{ steps.go.outputs.azure_runner }}
+          ghcr.io/orchard-suite/orrery-telemetry-runner@${{ steps.go.outputs.telemetry_runner }}
+          ghcr.io/orchard-suite/orrery-job-starter@${{ steps.go.outputs.job_starter }}
       # Each image is signed, attested, and verified at the same time as the
       # others; its log is printed whole when it ends.
       run: |
@@ -257,21 +175,34 @@ runs:
     # it names is signed and verified.
     - name: Tag the versions
       shell: bash
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        IMAGES: |
+          ghcr.io/orchard-suite/orrery@${{ steps.hub.outputs.digest }}
+          ghcr.io/orchard-suite/orrery-pusher-k8s@${{ steps.go.outputs.pusher_k8s }}
+          ghcr.io/orchard-suite/orrery-pusher-entra@${{ steps.go.outputs.pusher_entra }}
+          ghcr.io/orchard-suite/orrery-cli@${{ steps.go.outputs.cli }}
+          ghcr.io/orchard-suite/orrery-runner@${{ steps.go.outputs.runner }}
+          ghcr.io/orchard-suite/orrery-access-runner@${{ steps.go.outputs.access_runner }}
+          ghcr.io/orchard-suite/orrery-azure-runner@${{ steps.go.outputs.azure_runner }}
+          ghcr.io/orchard-suite/orrery-telemetry-runner@${{ steps.go.outputs.telemetry_runner }}
+          ghcr.io/orchard-suite/orrery-job-starter@${{ steps.go.outputs.job_starter }}
+      # Each signed image gets its version tag at the same time as the others,
+      # and the tag is read back to prove it names the signed digest.
       run: |
         tag() {
-          ref=$1; shift
-          for t in "$@"; do
-            docker buildx imagetools create --tag "$t" "$ref"
-            got=$(docker buildx imagetools inspect "$t" --format '{{json .Manifest.Digest}}' | tr -d '"')
-            [ "$got" = "${ref#*@}" ] || { echo "$t is $got, not the signed ${ref#*@}" >&2; exit 1; }
-          done
+          ref=$1; t="${ref%@*}:$VERSION"
+          docker buildx imagetools create --tag "$t" "$ref"
+          got=$(docker buildx imagetools inspect "$t" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          [ "$got" = "${ref#*@}" ] || { echo "$t is $got, not the signed ${ref#*@}" >&2; exit 1; }
         }
-        tag "ghcr.io/orchard-suite/orrery@${{ steps.hub.outputs.digest }}" "ghcr.io/orchard-suite/orrery:${{ steps.version.outputs.version }}"
-        tag "ghcr.io/orchard-suite/orrery-pusher-k8s@${{ steps.pusher-k8s.outputs.digest }}" "ghcr.io/orchard-suite/orrery-pusher-k8s:${{ steps.version.outputs.version }}"
-        tag "ghcr.io/orchard-suite/orrery-pusher-entra@${{ steps.pusher-entra.outputs.digest }}" "ghcr.io/orchard-suite/orrery-pusher-entra:${{ steps.version.outputs.version }}"
-        tag "ghcr.io/orchard-suite/orrery-cli@${{ steps.cli.outputs.digest }}" "ghcr.io/orchard-suite/orrery-cli:${{ steps.version.outputs.version }}"
-        tag "ghcr.io/orchard-suite/orrery-runner@${{ steps.runner.outputs.digest }}" "ghcr.io/orchard-suite/orrery-runner:${{ steps.version.outputs.version }}"
-        tag "ghcr.io/orchard-suite/orrery-access-runner@${{ steps.access-runner.outputs.digest }}" "ghcr.io/orchard-suite/orrery-access-runner:${{ steps.version.outputs.version }}"
-        tag "ghcr.io/orchard-suite/orrery-azure-runner@${{ steps.azure-runner.outputs.digest }}" "ghcr.io/orchard-suite/orrery-azure-runner:${{ steps.version.outputs.version }}"
-        tag "ghcr.io/orchard-suite/orrery-telemetry-runner@${{ steps.telemetry-runner.outputs.digest }}" "ghcr.io/orchard-suite/orrery-telemetry-runner:${{ steps.version.outputs.version }}"
-        tag "ghcr.io/orchard-suite/orrery-job-starter@${{ steps.job-starter.outputs.digest }}" "ghcr.io/orchard-suite/orrery-job-starter:${{ steps.version.outputs.version }}"
+        dir=$(mktemp -d); i=0
+        for ref in $IMAGES; do
+          i=$((i+1)); ( set -e; tag "$ref" ) > "$dir/$i.log" 2>&1 & echo "$! $i $ref" >> "$dir/jobs"
+        done
+        failed=0
+        while read -r pid n ref; do
+          if wait "$pid"; then echo "tagged $ref"; else echo "FAILED $ref" >&2; failed=1; fi
+          cat "$dir/$n.log"
+        done < "$dir/jobs"
+        exit $failed
