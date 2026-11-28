@@ -1859,10 +1859,12 @@ never restate it.
 Agents push to `main`. Commit on `main` and land with `make land` (`make land
 BRANCH=<branch>` from a worktree). It runs `release-damnit land`, which runs
 the config's check (`make check`) on exactly what lands and signs a landing
-proof that the release verifies. CI runs the same check on GitHub's hosted runners
-(`test.yml`, with Postgres as a service), then versions every `feat` and
-`fix` since the last release tag, tags it, and builds and signs the tag's
-images, plugin, and command line under `ghcr.io/orchard-suite`.
+proof that the release verifies. CI then versions every `feat` and `fix`
+since the last release tag, tags it, and builds and signs the tag's images,
+plugin, and command line under `ghcr.io/orchard-suite`. The same check runs
+beside the release on GitHub's hosted runners (`test.yml`, with Postgres as a
+service), from a clean checkout; it holds nothing up, and a red run is fixed
+forward. Only the version job holds the release lock.
 Never edit the version in `package.json`, `package-lock.json`, the manifest, or
 `CHANGELOG.md` by hand.
 
@@ -1873,7 +1875,11 @@ make check      # typecheck, tests, web build, go vet, go test, the API judge
 ```
 
 The server tests need a Postgres at `DATABASE_URL` (defaults to
-`postgres://orrery:orrery@localhost:5433/orrery`). `make check` starts the
+`postgres://orrery:orrery@localhost:5433/orrery`). Test files run side by
+side, six at a time, and each worker uses a database of its own, named after
+`DATABASE_URL`'s with `_w<worker>` on the end (`src/server/test-database.ts`).
+A test that builds a database of its own must name it from `DATABASE_URL`,
+so two workers never share it. `make check` starts the
 `orrery-pg` container on that port when it is not running. It also judges
 `openapi.json` against the latest tag with
 [Trellis](https://github.com/orchard-suite/trellis), in Docker, and fails on
